@@ -1,0 +1,118 @@
+---
+title: "SSD1 motifs in Aspergillus Nidulans & similarities with Aspergillus Fumigatus"
+author: "Tristan"
+date: "04/07/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(here)
+library(tidyverse)
+library(cowplot)
+theme_set(theme_cowplot(font_size = 12))
+library(Biostrings)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Summary
+In this doc we look for the *CNYTCNYT* Ssd-1 binding motif in Aspergillus Nidulans.
+We also look for similarities between those genes with significant motifs and the genes with significant motifs in Aspergillus Fumigatus.
+
+## Aspergillus Nidulans motif analysis
+### Load 1000nt UTRs from Aspergillus Nidulans
+```{r}
+#load data
+# define fasta filename
+As_up1000_file <- paste(here::here(), 
+                        "data", 
+                        "RNA",
+                        "Asp_Ni_999.fasta",
+                        sep= "/")
+
+# load fasta file as DNA string set
+As_up1000_DSS <- readDNAStringSet(As_up1000_file)
+
+# remove truncated sequences, which we don't need.
+As_up1000_DSS <- As_up1000_DSS[width(As_up1000_DSS) == 1000]
+
+# assign just the ORF id to the name, but keep all the info. 
+As_namesinfo <- 
+    tibble(everything = names(As_up1000_DSS)) %>%
+    tidyr::separate(everything,into = c("id","strain","info","seqtype","seq","length"), sep = " \\| ") %>%
+    dplyr::select(id, info,seq)
+```
+
+### Count occurences of *CNYTCNYT* motif in Aspergillus Nidulans
+```{r}
+CNYTCNYT_count_df <- tibble(id = As_namesinfo$id,
+                            info = As_namesinfo$info,
+                            count_up1000 = vcountPattern(pattern = DNAString("CNYTCNYT"),
+                                 subject = As_up1000_DSS,
+                                 fixed = "subject"),
+                            count_up200 = vcountPattern(pattern = DNAString("CNYTCNYT"),
+                                 subject = subseq(As_up1000_DSS,start = 801L, end = 1000L),
+                                 fixed = "subject"),
+                            count_up100 = vcountPattern(pattern = DNAString("CNYTCNYT"),
+                                 subject = subseq(As_up1000_DSS,start = 901L, end = 1000L),
+                                 fixed = "subject")
+)
+arrange(CNYTCNYT_count_df,desc(count_up100)) %>%
+    head(n = 20) %>%
+    knitr::kable()
+```
+
+This is a table of the genes with the highest counts in the 1000nt UTRs, 200nt UTRs and 100nt UTRs, sorted by the count in the 100nt UTRs.
+
+### 100nt upstream
+```{r}
+# plots of counts to 100bp upstream
+CNYT_up100_reducedmean <- CNYTCNYT_count_df %>%
+    pull(count_up100) %>%
+    mean()
+CNYT_up100_reducedvar <- CNYTCNYT_count_df %>%
+    pull(count_up100) %>%
+    var()
+ggplot(data = CNYTCNYT_count_df, aes(x = count_up100)) +
+    geom_bar(width = 1, aes(y = after_stat(prop)), stat = "count", group = 1) +
+    geom_line(data = tibble(),
+              aes(x = 0:20, y = dpois(0:20,lambda=CNYT_up100_reducedmean)),
+              colour = "blue") + 
+    scale_x_continuous(limits = c(-0.5,16), oob = scales::squish)
+```
+
+## Comparison of Aspergillus Nidulans and Fumigatus GO terms
+Following this, I did a GO term search on fungidb using the genelists of genes with ≥ 2 *CNYTCNYT* motifs in the 100nt UTRs of Aspergillus Nidulans and Aspergillus Fumigatus.
+```{r}
+dat_file <- paste(here::here(), 
+                        "data",
+                        "GO",
+                        sep= "/")
+
+#load data
+ASP_N_GO <- read_csv(paste(dat_file, "ASP_N_motif.csv", sep= "/")) %>%
+    mutate(From = "Aspergillus Nidulans")
+ASP_F_GO <- read_csv(paste(dat_file, "ASP_F_motif.csv", sep= "/")) %>%
+    mutate(From = "Aspergillus Fumigatus")
+```
+After loading in both GO Enrichment files, you can see that Aspergillus Nidulans has 12 GO terms with a p-value of < 0.05, whereas Aspergillus Fumigatus has 11 GO terms with a p-value of < 0.05.
+They have an overlap of 9 GO terms.
+
+```{r}
+#find overlap in GO names
+overlap <- intersect(ASP_N_GO$Name, ASP_F_GO$Name)
+
+#plot bar chart of "Pct of bgd" for each GO name in overlap from both ASP_N_GO and ASP_F_GO
+combined <- rbind(ASP_F_GO, ASP_N_GO)
+combined <- combined[combined$Name %in% overlap,]
+
+ggplot(combined, aes(x = reorder(Name, -`Pct of bgd`, FUN = min), y = `Pct of bgd`, group = From, fill = From)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "GO Name", y = "Pct of bgd", fill = "Type")
+```
+
+This shows that the GO terms of the targeted genes in Aspergillus Nidulans and Aspergillus Fumigatus are similar, with cell wall having lower representation in Aspergillus Nidulans but extracellular region having higher representation.
+
+```{r}
+sessionInfo()
+```
