@@ -5,7 +5,9 @@ theme_set(theme_cowplot(font_size = 12))
 library(Biostrings)
 library(idpr)
 library(rvest)
+library(reticulate)
 
+source_python(here("src", "phobius.py"))
 
 KD <- data.frame(V1 = KDNorm$V1, V2 = round((KDNorm$V2 * 9) - 4.5, 1))
 paper_df <- read_csv(here("data", "Proteins", "tslil_paper_protein_annotations.csv"))
@@ -18,6 +20,10 @@ yeast_secretome <- readAAStringSet(here("data", "Proteins", "tslil_protein_strin
 
 example_protein <- yeast_secretome[1]
 scaledHydropathyLocal(example_protein, window = 9, scale = "Kyte-Doolittle", plotResults = TRUE)
+
+
+# ---- Functions ----
+
 
 # function that calculates the local hydropathy of a protein
 # from idpr package, modified to use non normalised weights
@@ -49,6 +55,7 @@ hydropathy_local <- function(sequence, window = 9, scale = "Kyte-Doolittle") {
 }
 hydropathy_local(example_protein, 9)
 
+
 mean_hydropathy <- function(sequence) {
     seqCharacterVector <- sequenceCheck(sequence = sequence, method = "stop", 
         outputType = "vector", suppressOutputMessage = TRUE)
@@ -59,48 +66,33 @@ mean_hydropathy <- function(sequence) {
 }
 mean_hydropathy(example_protein)
 
-# function that takes in a protein AA string and returns a list
-# with the hydropathy dataframe, the left and right limits of the window
-find_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
-    # calculate local and mean hydropathy
-    hydropathy_df <- hydropathy_local(protein_AAStringSet, window = window_size, scale = "Kyte-Doolittle")
-    limit <- meanScaledHydropathy(protein_AAStringSet)
+find_hydropathy_windows <- function(protein_AAStringSet, isString = FALSE) {
 
-    #pull out the maximum hydropathy row and values
-    max_hydropathy_row <- hydropathy_df %>%
-        filter(WindowHydropathy == max(WindowHydropathy))
-    maximum <- max_hydropathy_row$WindowHydropathy
-    centre <- max_hydropathy_row$Position
-
-    left_len <- 1
-    right_len <- 1
-
-    # work backwards
-    while ((hydropathy_df[which(hydropathy_df$Position == centre - left_len),]$WindowHydropathy > limit)
-           && (centre - left_len >= 0)) {
-        left_len <- left_len + 1
+    # if it is a string, write it to a file
+    if (isString) {
+        writeXStringSet(protein_AAStringSet, file = "temp.fasta")
+        protein_AAStringSet <- "temp.fasta"
     }
-    # work forwards
-    while ((hydropathy_df[which(hydropathy_df$Position == centre + right_len),]$WindowHydropathy > limit)
-           && (centre + right_len <= nrow(hydropathy_df))) {
-        right_len <- right_len + 1
+    
+    # call phobius on file
+    hydropathy_windows <- phobius(protein_AAStringSet)
+
+    # if it is a string, delete the file
+    if (isString) {
+        file.remove("temp.fasta")
     }
 
-    return(list(dat = hydropathy_df %>%
-               mutate(isWindow = case_when(
-                     (Position < centre - left_len) ~ "Outside",
-                     (Position > centre + right_len) ~ "Outside",
-                     TRUE ~ "Inside",
-                )),
-             left = centre - left_len,
-             right = centre + right_len))
+    return(hydropathy_windows)
 }
-example_hydropathy_window <- find_hydropathy_window(example_protein, 9)
-example_hydropathy_window
+find_hydropathy_windows(example_protein, isString = TRUE)
+find_hydropathy_windows(here("data", "Proteins", "ten_tslil_protein_strings.fasta"))
+
 
 # function that takes in a protein AA string and returns a plot of the hydropathy window
 plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
-    hydropathy_window <- find_hydropathy_window(protein_AAStringSet, window_size)
+    # use phobius to find the hydropathy window
+    hydropathy_window <- c(find_hydropathy_windows(protein_AAStringSet, isString = TRUE)[1,])
+
     max_hydropathy_row <- hydropathy_window$dat %>%
         filter(WindowHydropathy == max(WindowHydropathy))
 
@@ -115,21 +107,14 @@ plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
 }    
 plot_hydropathy_window(example_protein, 9)
 
+
 # calculates the compund hydropathy score of a protein
 # by multiplying the maximum hydropathy score by the length of the window
 compound_hydropathy_score <- function(protein_AAStringSet, window_size = 9) {
-    hydropathy_window <- find_hydropathy_window(protein_AAStringSet, window_size)
-    max_hydropathy_row <- hydropathy_window$dat %>%
+    hydropathy_window <- c(find_hydropathy_windows(protein_AAStringSet, isString = TRUE)[1,])
+    max_hydropathy_row <- hydropathy_local(protein_AAStringSet) %>%
         filter(WindowHydropathy == max(WindowHydropathy))
-
     
-    return(max_hydropathy_row$WindowHydropathy * (hydropathy_window$right - hydropathy_window$left))
+    return(max_hydropathy_row$WindowHydropathy * ((hydropathy_window$end - hydropathy_window$start) + 1))
 }
 compound_hydropathy_score(example_protein, 9)
-
-string <- "ACDEFGHIKLMNPQRSTVWY"
-hydro_df <- scaledHydropathyGlobal(string, scale = "Kyte-Doolittle")
-hydro_df$mine <- mean_hydropathy(string)
-
-# write first 10 proteins to file
-writeXStringSet(yeast_secretome[1:10], file = here("data", "Proteins", "ten_tslil_protein_strings.fasta"))
