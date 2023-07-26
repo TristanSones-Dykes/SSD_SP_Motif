@@ -93,14 +93,15 @@ plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
     # use phobius to find the hydropathy window
     hydropathy_window <- c(find_hydropathy_windows(protein_AAStringSet, isString = TRUE)[1,])
 
-    max_hydropathy_row <- hydropathy_window$dat %>%
+    hydropathy_df <- hydropathy_local(protein_AAStringSet)
+    max_hydropathy_row <- hydropathy_df %>%
         filter(WindowHydropathy == max(WindowHydropathy))
 
-    ggplot(hydropathy_window$dat, aes(x = Position, y = WindowHydropathy, colour = isWindow)) + 
-        geom_path(aes(group = 1)) + 
+    ggplot(hydropathy_df, aes(x = Position, y = WindowHydropathy)) + 
+        geom_path() + 
         geom_hline(yintercept = mean_hydropathy(protein_AAStringSet), linetype = "dashed", colour = "grey") +
-        geom_vline(xintercept = hydropathy_window$left, linetype = "dashed", colour = "red") +
-        geom_vline(xintercept = hydropathy_window$right, linetype = "dashed", colour = "red") +
+        geom_vline(xintercept = hydropathy_window$start, linetype = "dashed", colour = "red") +
+        geom_vline(xintercept = hydropathy_window$end, linetype = "dashed", colour = "red") +
         geom_point(data = max_hydropathy_row, aes(x = Position, y = WindowHydropathy), colour = "black") +
         geom_text(data = max_hydropathy_row, aes(x = Position, y = WindowHydropathy, label = WindowHydropathy), vjust = -1) +
         labs(x = "Position", y = "Hydropathy", title = "Hydropathy of protein", colour = "Location")
