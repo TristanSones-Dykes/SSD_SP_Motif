@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup as bs
 import mechanicalsoup
 import pandas as pd
 import os
+import signalp as sp
 
 # url for phobius
 url = "https://phobius.sbc.su.se/index.html"
