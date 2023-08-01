@@ -11,7 +11,7 @@ signalp <- function(input_path, organism = "euk", mode = "fast", format = "none"
     file_name <- gsub(".fasta", "", basename(input_path))
 
     # create output path
-    out_path <- paste0("results/", file_name)
+    out_path <- here("results", file_name)
 
     # check if output path exists, if it does, exit function
     if (!file.exists(out_path)) {

@@ -60,6 +60,7 @@ hydropathy_local <- function(sequence, window = 9, scale = "Kyte-Doolittle") {
 #hydropathy_local(example_protein, 9)
 
 
+
 # function that calculates the mean hydropathy of a protein
 mean_hydropathy <- function(sequence) {
     seqCharacterVector <- sequenceCheck(sequence = sequence, method = "stop", 
@@ -70,6 +71,8 @@ mean_hydropathy <- function(sequence) {
     mean(scoreVector)
 }
 #mean_hydropathy(example_protein)
+
+
 
 # function that uses phobius to find the hydropathy window of a protein
 find_hydropathy_windows <- function(protein_AAStringSet, isString = FALSE) {
@@ -94,6 +97,7 @@ find_hydropathy_windows <- function(protein_AAStringSet, isString = FALSE) {
 #find_hydropathy_windows(here("data", "Proteins", "tslil_paper", "ten_tslil_protein_strings.fasta"))
 
 
+
 # function that takes in a protein AA string and returns a plot of the hydropathy window
 plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
     # use phobius to find the hydropathy window
@@ -115,6 +119,7 @@ plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
 #plot_hydropathy_window(example_protein, 9)
 
 
+
 # calculates the compund hydropathy score of a protein
 # by multiplying the maximum hydropathy score by the length of the window
 compound_hydropathy_score <- function(protein_AAStringSet, window_size = 9) {
@@ -125,3 +130,55 @@ compound_hydropathy_score <- function(protein_AAStringSet, window_size = 9) {
     return(max_hydropathy_row$WindowHydropathy * ((hydropathy_window$end - hydropathy_window$start) + 1))
 }
 #compound_hydropathy_score(example_protein, 9)
+
+
+
+# function that uses phobius to detect TM and SP regions in a protein AA string
+# returns a dataframe with the start and end positions of the TM and SP regions
+# specifically, returns those with the names of the file in the input path
+# and updates the global TM_df variable with all new results including nulls
+cached_phobius <- function(input_path) {
+    # read in stringset
+    protein_AAStringSet <- readAAStringSet(input_path)
+
+    # check if TM_df exists in environment
+    if (exists("TM_df")) {
+        # if it does exist, find difference between TM_df and input
+        TM_df_diff <- setdiff(names(protein_AAStringSet), TM_df$ID)
+
+        # if there is a difference, run phobius on the difference
+        if (length(TM_df_diff) > 0) {
+            # call phobius on file
+            infile <- tempfile(fileext = ".fasta")
+            writeXStringSet(protein_AAStringSet[which(names(protein_AAStringSet) %in% TM_df_diff)], file = infile)
+            phobius_output <- phobius(infile) 
+        } else {
+            # if there is no difference, return TM_df of input with no NA's
+            return(TM_df %>% 
+                filter(ID %in% names(protein_AAStringSet)) %>%
+                drop_na())
+        }
+    } else {
+        # if it doesn't exist, run phobius on the whole input
+        phobius_output <- phobius(input_path)
+
+        # create TM_df variable
+        TM_df <<- data.frame(ID = character(),
+                             start = integer(),
+                             end = integer(),
+                             type = character())
+    }
+
+    # convert all start and end to NA when there is no TM or SP region
+    phobius_output <- phobius_output %>%
+        mutate(start = ifelse(type == "NONE", NA_integer_, start),
+               end = ifelse(type == "NONE", NA_integer_, end))
+
+    # add the new results to the global TM_df variable
+    TM_df <<- rbind(TM_df, phobius_output)
+
+    # return TM_df of input with no NA's
+    return(TM_df %>% 
+        filter(ID %in% names(protein_AAStringSet)) %>%
+        drop_na())
+}

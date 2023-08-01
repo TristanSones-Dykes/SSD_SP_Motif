@@ -47,31 +47,51 @@ def phobius(origin: str, isString: bool = False) -> pd.DataFrame:
 
     assert len(out_split) == len(fileString.split(">")) - 1, "number of proteins in output does not match number of proteins in input"
 
-    # split into predicted and unpredicted
+    # split into predicted and unpredicted, and predicted into transmembrane and signal
     predicted = []
     unpredicted = []
     for protein in out_split:
         if 'TRANSMEM' in [x[1] for x in protein]:
-            predicted.append(protein)
+            predicted.append((protein, "TRANSMEM"))
+        elif 'SIGNAL' in [x[1] for x in protein]:
+            predicted.append((protein, "SIGNAL"))
         else:
             unpredicted.append(protein)
 
     # populate dataframe with predicted transmembrane window sizes
-    window_df = pd.DataFrame(columns = ["ID", "start", "end"], dtype = int)
-    for protein in predicted:
-        # extract category column
-        col_2 = [x[1] for x in protein]
+    window_df = pd.DataFrame(columns = ["ID", "start", "end", "type"])
+    # setting datatypes
+    window_df = window_df.astype({"ID": str, "start": int, "end": int, "type": str})
 
-        # extract protein ID, and start and end of transmembrane region
+    for (protein, window_type) in predicted:
+        # extract category column and protein ID
+        col_2 = [x[1] for x in protein]
         proteinID = col_2[0]
-        transmem_row = col_2.index("TRANSMEM")
-        start = int(protein[transmem_row][2])
-        end = int(protein[transmem_row][3])
+
+        if window_type == "TRANSMEM":
+            # grab transmembrane row
+            window_row = col_2.index("TRANSMEM")
+        elif window_type == "SIGNAL":
+            # search region rows for "H-REGION."
+            region_rows = [i for i, x in enumerate(col_2) if x == "REGION"]
+            window_row = region_rows[1]
+        
+        start = int(protein[window_row][2])
+        end = int(protein[window_row][3])
         
         # append to dataframe
-        new_row = pd.DataFrame([[proteinID, start, end]], columns = ["ID", "start", "end"])
+        new_row = pd.DataFrame([[proteinID, start, end, window_type]], columns = ["ID", "start", "end", "type"])
         window_df = pd.concat([window_df, new_row], ignore_index=True)
     
+    for protein in unpredicted:
+        # extract category column and protein ID
+        col_2 = [x[1] for x in protein]
+        proteinID = col_2[0]
+
+        # append to dataframe
+        new_row = pd.DataFrame([[proteinID, 0, 0, "NONE"]], columns = ["ID", "start", "end", "type"])
+        window_df = pd.concat([window_df, new_row], ignore_index=True)
+
     #delete temp file
     if isString:
         os.remove("temp.fasta")

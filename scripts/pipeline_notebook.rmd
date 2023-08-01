@@ -12,20 +12,21 @@ source(here("src", "signal_peptides.r"))
 source(here("src", "hydrophobicity.r"))
 
 # define paths
-protein_path <- here("data", "Proteins", "tslil_protein_strings.fasta")
+protein_path <- here("data", "Proteins", "tslil_first_60.fasta")
 RNA_path <- here("data", "RNA", "SC_999.fasta")
 
 # read in AA and RNA strings
 AA_stringset <- readAAStringSet(protein_path)
 RNA_stringset <- readDNAStringSet(RNA_path)
 
-# run signalP for protein names
-protein_names <- signalp(protein_path)
+# grab protein names
+protein_names <- names(AA_stringset)
 
-# run phobius on signalP results
-outfile <- tempfile(fileext = ".fasta")
-writeXStringSet(AA_stringset[protein_names], outfile)
-TM_df <- phobius(outfile)
+# run signalP for protein names
+signalp_output <- signalp(protein_path)
+
+# run phobius on protein sequences
+TM_df_noNA <- cached_phobius(protein_path)
 ```
 
 ### Summary
@@ -45,20 +46,26 @@ library(mixtools)
 
 # find hydrophobicity scores for each protein
 compound_df <- data.frame(geneID = character(), compound_hydropathy_score = numeric())
-for(i in seq_len(nrow(TM_df))) {
-    hydrophobicity_df <- hydropathy_local(AA_stringset[TM_df$ID[i]])
+for(i in seq_len(nrow(TM_df_noNA))) {
+    hydrophobicity_df <- hydropathy_local(AA_stringset[TM_df_noNA$ID[i]])
     max_hydrophobicity <- hydrophobicity_df %>%
-        filter(Position >= TM_df$start[i]) %>%
-        filter(Position <= TM_df$end[i]) %>%
+        filter(Position >= TM_df_noNA$start[i]) %>%
+        filter(Position <= TM_df_noNA$end[i]) %>%
         summarise(max_hydrophobicity = max(WindowHydropathy)) %>%
         pull(max_hydrophobicity)
 
-    window_length <- TM_df$end[i] - TM_df$start[i] + 1
+    window_length <- TM_df_noNA$end[i] - TM_df_noNA$start[i] + 1
     compound_hydropathy_score <- max_hydrophobicity * window_length
-    compound_df <- rbind(compound_df, data.frame(geneID = TM_df$ID[i], compound_hydropathy_score = compound_hydropathy_score))
+    compound_df <- rbind(compound_df, data.frame(geneID = TM_df_noNA$ID[i], compound_hydropathy_score = compound_hydropathy_score))
 }
 
 mixed_model <- normalmixEM(compound_df$compound_hydropathy_score, k = 2)
+
+# find intersection of two normal distributions
+intersection <- uniroot(function(x) {
+    dnorm(x, mean = mixed_model$mu[1], sd = mixed_model$sigma[1]) - dnorm(x, mean = mixed_model$mu[2], sd = mixed_model$sigma[2])
+}, c(min(mixed_model$mu), max(mixed_model$mu)))$root
+average <- mean(mixed_model$mu)
 
 # plot distribution of scores with mixture model using ggplot2
 # with an overlay of the two normal distributions
@@ -66,13 +73,8 @@ ggplot(compound_df, aes(x = compound_hydropathy_score)) +
     geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "white", colour = "black") + 
     stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), colour = "red") +
     stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), colour = "green") +
+    geom_vline(xintercept = intersection, colour = "blue", linetype = "dashed") +
+    geom_vline(xintercept = average, colour = "purple", linetype = "dashed") +
     labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores") +
     theme_bw()
-
-#ggplot(compound_df, aes(x = compound_hydropathy_score)) +
-#    geom_density(aes(y = after_stat(density)), fill = "blue", alpha = 0.2) +
-#    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), colour = "red") +
-#    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), colour = "green") +
-#    labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores") +
-#    theme_bw()
 ```
