@@ -4,6 +4,12 @@ import pandas as pd
 import os
 import signalp as sp
 
+
+# ------ Description ------
+# This script contains functions to run phobius transmembrane
+# prediction on a list of proteins in FASTA format by web scraping
+# the form of the online tool
+
 # url for phobius
 url = "https://phobius.sbc.su.se/index.html"
 

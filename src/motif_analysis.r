@@ -5,6 +5,11 @@ theme_set(theme_cowplot(font_size = 12))
 library(Biostrings)
 library(ggseqlogo)
 
+
+# ---- Description ----
+# This script contains functions for finding motifs in an RNA/DNA sequence
+
+
 #function that takes a 5'UTR FASTA and saves a FASTA of 
 #those that have CNYTCNYT motifs n number of times in the first l nucleotides
 find_motifs <- function(input_path, output_path, rna_length = 1000L, n = 2, l = 100L, motif = "CNYTCNYT") {
@@ -35,4 +40,4 @@ find_motifs <- function(input_path, output_path, rna_length = 1000L, n = 2, l = 
     # save fasta
     writeXStringSet(input_RNA[motif_matches$ID], output_path)
 }
-find_motifs("data/RNA/Asp_Ni_999.fasta", "results/out1.fasta", rna_length = 1000L, n = 2, l = 100L, motif = "CNYTCNYT")
+#find_motifs("data/RNA/Asp_Ni_999.fasta", "results/out1.fasta", rna_length = 1000L, n = 2, l = 100L, motif = "CNYTCNYT")

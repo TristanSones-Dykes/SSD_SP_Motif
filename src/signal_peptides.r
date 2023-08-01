@@ -1,5 +1,11 @@
 library(Biostrings)
 
+# ---- Description ----
+# This script contains functions for finding 
+# signal peptides in a protein sequence using signalp
+# command line tool (requires signalp6 to be installed)
+# instructions: https://github.com/fteufel/signalp-6.0/blob/main/installation_instructions.md
+
 signalp <- function(input_path, organism = "euk", mode = "fast", format = "none") {
     # extract file name from path, replace .fasta with _out
     file_name <- gsub(".fasta", "", basename(input_path))

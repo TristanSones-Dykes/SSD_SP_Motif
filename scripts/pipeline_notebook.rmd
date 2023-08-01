@@ -1,0 +1,78 @@
+---
+title: "<Species> SRP Pipeline Report"
+author: "Tristan Sones-Dykes"
+date: "31/07/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(here)
+# grab functions from src
+source(here("src", "signal_peptides.r"))
+source(here("src", "hydrophobicity.r"))
+
+# define paths
+protein_path <- here("data", "Proteins", "tslil_protein_strings.fasta")
+RNA_path <- here("data", "RNA", "SC_999.fasta")
+
+# read in AA and RNA strings
+AA_stringset <- readAAStringSet(protein_path)
+RNA_stringset <- readDNAStringSet(RNA_path)
+
+# run signalP for protein names
+protein_names <- signalp(protein_path)
+
+# run phobius on signalP results
+outfile <- tempfile(fileext = ".fasta")
+writeXStringSet(AA_stringset[protein_names], outfile)
+TM_df <- phobius(outfile)
+```
+
+### Summary
+In this doc we use SignalP to find signal peptides in AA strings, then run phobius
+and use the Kyte-Doolittle hydrophobicity scale to find a compound hydrophobicity score
+to separate secreted proteins into ones that use the signal recognition particle (SRP) and 
+those that don't. Then use motif analysis to find out if Ssd-1 significantly targets one 
+of these groups.
+
+## SignalP and Hydrophobicity 
+After running SignalP and Phobius, we can use the Kyte-Doolittle hydrophobicity scale to
+find the compound hydrophobicity score for each protein with a signal peptide, then find
+the underlying bimodal distribution to categorise the proteins into the two SRP groups.
+
+```{r}
+library(mixtools)
+
+# find hydrophobicity scores for each protein
+compound_df <- data.frame(geneID = character(), compound_hydropathy_score = numeric())
+for(i in seq_len(nrow(TM_df))) {
+    hydrophobicity_df <- hydropathy_local(AA_stringset[TM_df$ID[i]])
+    max_hydrophobicity <- hydrophobicity_df %>%
+        filter(Position >= TM_df$start[i]) %>%
+        filter(Position <= TM_df$end[i]) %>%
+        summarise(max_hydrophobicity = max(WindowHydropathy)) %>%
+        pull(max_hydrophobicity)
+
+    window_length <- TM_df$end[i] - TM_df$start[i] + 1
+    compound_hydropathy_score <- max_hydrophobicity * window_length
+    compound_df <- rbind(compound_df, data.frame(geneID = TM_df$ID[i], compound_hydropathy_score = compound_hydropathy_score))
+}
+
+mixed_model <- normalmixEM(compound_df$compound_hydropathy_score, k = 2)
+
+# plot distribution of scores with mixture model using ggplot2
+# with an overlay of the two normal distributions
+ggplot(compound_df, aes(x = compound_hydropathy_score)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "white", colour = "black") + 
+    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), colour = "red") +
+    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), colour = "green") +
+    labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores") +
+    theme_bw()
+
+#ggplot(compound_df, aes(x = compound_hydropathy_score)) +
+#    geom_density(aes(y = after_stat(density)), fill = "blue", alpha = 0.2) +
+#    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), colour = "red") +
+#    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), colour = "green") +
+#    labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores") +
+#    theme_bw()
+```
