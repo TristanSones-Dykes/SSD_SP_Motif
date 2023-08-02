@@ -11,6 +11,8 @@ library(reticulate)
 # ---- Description ----
 # This script contains functions for calculating and plotting 
 # the hydrophobicity of a protein sequence(s) on a kyte-doolittle scale.
+# It also includes functions for finding the hydropathy window of a protein
+# using the phobius online tool (does not require it to be installed)
 
 
 source_python(here("src", "phobius.py"))
@@ -32,7 +34,7 @@ KD <- data.frame(V1 = KDNorm$V1, V2 = round((KDNorm$V2 * 9) - 4.5, 1))
 # function that calculates the local hydropathy of a protein
 # from idpr package, modified to use non normalised weights
 hydropathy_local <- function(sequence, window = 9, scale = "Kyte-Doolittle") {
-    seqVector <- sequenceCheck(sequence = sequence, method = "stop", 
+    seqVector <- sequenceCheck(sequence = sequence, nonstandardResidues = c('X'), method = "stop", 
         outputType = "vector", suppressOutputMessage = TRUE)
     if ((window%%2) == 0) {
         stop("Window must be an odd number")
@@ -131,54 +133,23 @@ compound_hydropathy_score <- function(protein_AAStringSet, window_size = 9) {
 }
 #compound_hydropathy_score(example_protein, 9)
 
-
-
-# function that uses phobius to detect TM and SP regions in a protein AA string
-# returns a dataframe with the start and end positions of the TM and SP regions
-# specifically, returns those with the names of the file in the input path
-# and updates the global TM_df variable with all new results including nulls
-cached_phobius <- function(input_path) {
-    # read in stringset
-    protein_AAStringSet <- readAAStringSet(input_path)
-
-    # check if TM_df exists in environment
-    if (exists("TM_df")) {
-        # if it does exist, find difference between TM_df and input
-        TM_df_diff <- setdiff(names(protein_AAStringSet), TM_df$ID)
-
-        # if there is a difference, run phobius on the difference
-        if (length(TM_df_diff) > 0) {
-            # call phobius on file
-            infile <- tempfile(fileext = ".fasta")
-            writeXStringSet(protein_AAStringSet[which(names(protein_AAStringSet) %in% TM_df_diff)], file = infile)
-            phobius_output <- phobius(infile) 
-        } else {
-            # if there is no difference, return TM_df of input with no NA's
-            return(TM_df %>% 
-                filter(ID %in% names(protein_AAStringSet)) %>%
-                drop_na())
+r_phobius <- function(protein_AA_path) {
+    if (exists("phobius_output")) {
+        print("phobius_output already exists, checking if the same...")
+        if (length(phobius_output) == length(readAAStringSet(protein_AA_path))) {
+            print("same length, not running again")
+            return(phobius_output)
         }
-    } else {
-        # if it doesn't exist, run phobius on the whole input
-        phobius_output <- phobius(input_path)
-
-        # create TM_df variable
-        TM_df <<- data.frame(ID = character(),
-                             start = integer(),
-                             end = integer(),
-                             type = character())
     }
 
-    # convert all start and end to NA when there is no TM or SP region
-    phobius_output <- phobius_output %>%
-        mutate(start = ifelse(type == "NONE", NA_integer_, start),
-               end = ifelse(type == "NONE", NA_integer_, end))
+    # call phobius on file
+    hydropathy_windows <- phobius(protein_AA_path) %>%
+        mutate(type = case_when(
+            type == "TRANSMEM" ~ "TM",
+            type == "SIGNAL" ~ "SP",
+            type == "NONE" ~ "OTHER"
+        ))
+    colnames(hydropathy_windows) <- c("seqid", "phobius_start", "phobius_end", "phobius_type")
 
-    # add the new results to the global TM_df variable
-    TM_df <<- rbind(TM_df, phobius_output)
-
-    # return TM_df of input with no NA's
-    return(TM_df %>% 
-        filter(ID %in% names(protein_AAStringSet)) %>%
-        drop_na())
+    return(hydropathy_windows)
 }

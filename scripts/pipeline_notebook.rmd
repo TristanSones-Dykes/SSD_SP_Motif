@@ -10,14 +10,14 @@ library(here)
 # grab functions from src
 source(here("src", "signal_peptides.r"))
 source(here("src", "hydrophobicity.r"))
+source(here("src", "motif_analysis.r"))
 
 # define paths
-protein_path <- here("data", "Proteins", "tslil_first_60.fasta")
+protein_path <- here("data", "Proteins", "SC_first_60.fasta")
 RNA_path <- here("data", "RNA", "SC_999.fasta")
 
-# read in AA and RNA strings
+# read in AA strings
 AA_stringset <- readAAStringSet(protein_path)
-RNA_stringset <- readDNAStringSet(RNA_path)
 
 # grab protein names
 protein_names <- names(AA_stringset)
@@ -26,14 +26,22 @@ protein_names <- names(AA_stringset)
 signalp_output <- signalp(protein_path)
 
 # run phobius on protein sequences
-TM_df_noNA <- cached_phobius(protein_path)
+phobius_output <- r_phobius(protein_path)
+
+# run motif analysis on 5'UTRs
+motif_results <- find_motifs(RNA_path)
+
+# combine dfs
+combined_df <- signalp_output %>%
+    full_join(phobius_output, by = "seqid") %>%
+    left_join(motif_results, by = "seqid")
 ```
 
 ### Summary
-In this doc we use SignalP to find signal peptides in AA strings, then run phobius
-and use the Kyte-Doolittle hydrophobicity scale to find a compound hydrophobicity score
+In this doc we use SignalP and Phobius to find signal peptides and transmembrane regions in protein sequences,
+then use the Kyte-Doolittle hydrophobicity scale to find a compound hydrophobicity score
 to separate secreted proteins into ones that use the signal recognition particle (SRP) and 
-those that don't. Then use motif analysis to find out if Ssd-1 significantly targets one 
+those that don't assuming they form a bimodal distribution. Then use motif analysis to find out if Ssd-1 significantly targets one 
 of these groups.
 
 ## SignalP and Hydrophobicity 
@@ -45,21 +53,43 @@ the underlying bimodal distribution to categorise the proteins into the two SRP 
 library(mixtools)
 
 # find hydrophobicity scores for each protein
-compound_df <- data.frame(geneID = character(), compound_hydropathy_score = numeric())
-for(i in seq_len(nrow(TM_df_noNA))) {
-    hydrophobicity_df <- hydropathy_local(AA_stringset[TM_df_noNA$ID[i]])
+phobius_no_NA <- combined_df %>%
+    filter(phobius_type != "OTHER")
+signalp_no_NA <- combined_df %>%
+    filter(signalp_type != "OTHER")
+
+phobius_df <- data.frame(seqid = character(), phobius_compound_hydro = numeric())
+signalp_df <- data.frame(seqid = character(), signalp_compound_hydro = numeric())
+for(i in seq_len(nrow(phobius_no_NA))) {
+    hydrophobicity_df <- hydropathy_local(AA_stringset[phobius_no_NA$seqid[i]])
     max_hydrophobicity <- hydrophobicity_df %>%
-        filter(Position >= TM_df_noNA$start[i]) %>%
-        filter(Position <= TM_df_noNA$end[i]) %>%
+        filter(Position >= phobius_no_NA$phobius_start[i]) %>%
+        filter(Position <= phobius_no_NA$phobius_end[i]) %>%
         summarise(max_hydrophobicity = max(WindowHydropathy)) %>%
         pull(max_hydrophobicity)
 
-    window_length <- TM_df_noNA$end[i] - TM_df_noNA$start[i] + 1
+    window_length <- phobius_no_NA$phobius_end[i] - phobius_no_NA$phobius_start[i] + 1
     compound_hydropathy_score <- max_hydrophobicity * window_length
-    compound_df <- rbind(compound_df, data.frame(geneID = TM_df_noNA$ID[i], compound_hydropathy_score = compound_hydropathy_score))
+    phobius_df <- rbind(phobius_df, data.frame(seqid = phobius_no_NA$seqid[i], phobius_compound_hydro = compound_hydropathy_score))
+}
+for(i in seq_len(nrow(signalp_no_NA))) {
+    hydrophobicity_df <- hydropathy_local(AA_stringset[signalp_no_NA$seqid[i]])
+    max_hydrophobicity <- hydrophobicity_df %>%
+        filter(Position >= signalp_no_NA$signalp_start[i]) %>%
+        filter(Position <= signalp_no_NA$signalp_end[i]) %>%
+        summarise(max_hydrophobicity = max(WindowHydropathy)) %>%
+        pull(max_hydrophobicity)
+
+    window_length <- signalp_no_NA$signalp_end[i] - signalp_no_NA$signalp_start[i] + 1
+    compound_hydropathy_score <- max_hydrophobicity * window_length
+    signalp_df <- rbind(signalp_df, data.frame(seqid = signalp_no_NA$seqid[i], signalp_compound_hydro = compound_hydropathy_score))
 }
 
-mixed_model <- normalmixEM(compound_df$compound_hydropathy_score, k = 2)
+combined_df <- combined_df %>%
+    full_join(phobius_df, by = "seqid") %>%
+    full_join(signalp_df, by = "seqid")
+
+mixed_model <- normalmixEM(phobius_df$phobius_compound_hydro, k = 2)
 
 # find intersection of two normal distributions
 intersection <- uniroot(function(x) {
@@ -69,12 +99,12 @@ average <- mean(mixed_model$mu)
 
 # plot distribution of scores with mixture model using ggplot2
 # with an overlay of the two normal distributions
-ggplot(compound_df, aes(x = compound_hydropathy_score)) +
+ggplot(phobius_df, aes(x = phobius_compound_hydro)) +
     geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "white", colour = "black") + 
     stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), colour = "red") +
     stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), colour = "green") +
     geom_vline(xintercept = intersection, colour = "blue", linetype = "dashed") +
     geom_vline(xintercept = average, colour = "purple", linetype = "dashed") +
-    labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores") +
+    labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores (Cerevisiae)") +
     theme_bw()
 ```
