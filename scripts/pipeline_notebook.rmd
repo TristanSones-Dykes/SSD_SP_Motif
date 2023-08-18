@@ -22,10 +22,8 @@ AA_stringset <- readAAStringSet(protein_path)
 # grab protein names
 protein_names <- names(AA_stringset)
 
-# run signalP for protein names
+# run signalP and Phobius on protein sequences
 signalp_output <- signalp(protein_path)
-
-# run phobius on protein sequences
 phobius_output <- r_phobius(protein_path)
 
 # run motif analysis on 5'UTRs

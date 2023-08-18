@@ -1,0 +1,44 @@
+---
+title: "<Species> SRP Pipeline Report"
+author: "Tristan Sones-Dykes"
+date: "31/07/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+pair_counts <- find_motif_pairs(here("data", "RNA", "SC_999.fasta"),
+                                motif_A = "CNYTCNYT",
+                                motif_B = "NNAANN",
+                                window_left = 30,
+                                window_right = 4,
+                                motif_A_lim = 2)
+
+sequence_vector <- c()
+# loop through pair counts dataframe
+for (i in seq_len(NROW(pair_counts))) {
+    motif <- pair_counts$motif_B[i]
+    count <- pair_counts$count[i]
+
+    sequence_vector <- c(sequence_vector, rep(motif, count))
+}
+
+ggseqlogo(sequence_vector, method = "probability", yaxis_label = "Probability", xaxis_label = "Position", xaxis_seq = 1:10, alphabet = "DNA", color_scheme = "black")
+
+
+# set stringset names to unique IDs
+#names(stringset) <- paste0("seq", seq_len(length(stringset)))
+#writeXStringSet(stringset, "motif_B_sequences.fasta")
+
+
+#stringset <- readDNAStringSet(input_path)
+#stringset <- stringset[width(stringset) == 1000]
+#enriched_100 <- find_motifs(input_path) %>%
+#    filter(count_up_100 >= 2) %>%
+#    pull(seqid)
+
+#stringset <- subseq(stringset, start = 901L, end = 1000L)
+#enriched_stringset <- stringset[enriched_100]
+
+#writeXStringSet(enriched_stringset, "enriched_100.fasta")
+#writeXStringSet(stringset, "all_100.fasta")
+```
