@@ -1,44 +1,162 @@
 ---
-title: "<Species> SRP Pipeline Report"
+title: "<Species> Paired Motif Analysis Report"
 author: "Tristan Sones-Dykes"
 date: "31/07/23"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-pair_counts <- find_motif_pairs(here("data", "RNA", "SC_999.fasta"),
-                                motif_A = "CNYTCNYT",
-                                motif_B = "NNAANN",
-                                window_left = 30,
-                                window_right = 4,
-                                motif_A_lim = 2)
+library(here)
+# grab functions from src
+source(here("src", "signal_peptides.r"))
+source(here("src", "hydrophobicity.r"))
+source(here("src", "motif_analysis.r"))
 
-sequence_vector <- c()
-# loop through pair counts dataframe
-for (i in seq_len(NROW(pair_counts))) {
-    motif <- pair_counts$motif_B[i]
-    count <- pair_counts$count[i]
+# define paths
+protein_path <- here("data", "Proteins", "SC_first_60.fasta")
+RNA_path <- here("data", "RNA", "SC_999.fasta")
 
-    sequence_vector <- c(sequence_vector, rep(motif, count))
-}
+# read in AA strings
+AA_stringset <- readAAStringSet(protein_path)
 
-ggseqlogo(sequence_vector, method = "probability", yaxis_label = "Probability", xaxis_label = "Position", xaxis_seq = 1:10, alphabet = "DNA", color_scheme = "black")
+# grab protein names
+protein_names <- names(AA_stringset)
 
+# run signalP and Phobius on protein sequences
+signalp_output <- signalp(protein_path)
+phobius_output <- r_phobius(protein_path)
 
-# set stringset names to unique IDs
-#names(stringset) <- paste0("seq", seq_len(length(stringset)))
-#writeXStringSet(stringset, "motif_B_sequences.fasta")
+# combine dfs
+combined_df <- signalp_output %>%
+    full_join(phobius_output, by = "seqid")
+```
 
+### Summary
+The purpose of this document is to use paired motif analysis to try to find ways of identifying secondary binding motifs in species other than 
+Cerevisiae, this is because one (CNYTCNYT) is bonded chemically to the Ssd-1 protein, whereas the second (CCAACT) is only a physical fit for the 
+protein surface and chemically binds to itself. This explains why the second motif is not required for Ssd-1 function, however, it is still  
+important for optimal function.
 
-#stringset <- readDNAStringSet(input_path)
-#stringset <- stringset[width(stringset) == 1000]
-#enriched_100 <- find_motifs(input_path) %>%
-#    filter(count_up_100 >= 2) %>%
-#    pull(seqid)
+## Cerevisiae baseline analysis
+This begins by generating possible secondary motifs using an input IUPAC code and then finds pairs using the primary motif and a window.
+These are then plotted as a grid of histograms and enriched genes from CRAC experimental data are highlighted as well as those with
+signal peptides or other possible heuristics for Ssd-1 binding.
 
-#stringset <- subseq(stringset, start = 901L, end = 1000L)
-#enriched_stringset <- stringset[enriched_100]
+```{r, echo=FALSE, warning=FALSE, results='hide'}
+# read in 5'UTR FASTA
+input_RNA <- readDNAStringSet(RNA_path)
 
-#writeXStringSet(enriched_stringset, "enriched_100.fasta")
-#writeXStringSet(stringset, "all_100.fasta")
+# read in CRAC genes from txt
+crac_genes <- read_tsv(here("data", "RNA", "SC_CRAC_enriched.txt"), col_names = FALSE) %>%
+    pull(X1)
+
+# save signal peptide/TM genes
+signal_peptide_genes <- combined_df %>%
+    mutate(both = paste(phobius_type, signalp_type)) %>%
+    filter(both != "OTHER OTHER") %>%
+    pull(seqid)
+
+# find motif pairs and filter for heuristics
+all <- find_motif_pairs(input_RNA, "CNYTCNYT", "CCNNCT", window_left = 53, window_right = 4, isPath = FALSE)
+enriched <- all %>%
+    filter(seqid %in% crac_genes)
+
+# combine all and enriched dataframes using category column
+all$cat <- "all"
+enriched$cat <- "enriched"
+combined_heuristics <- rbind(all, enriched)
+
+# plot motif B relative to motif A for CRAC and all genes
+ggplot(combined_heuristics, aes(x = motif_B_start, colour = cat)) +
+    geom_histogram(binwidth = 1, position = "identity") +
+    facet_wrap(~ motif_B, scales = "free_x") +
+    theme_bw() + 
+    labs(title = "Motif B start position relative to motif A (overlapped histograms)", x = "Motif B start position", y = "Count")
+
+# plot motif B relative to motif A for all genes
+#ggplot(all, aes(x = motif_B_start)) +
+#    geom_histogram(binwidth = 1, position = "identity") +
+#    facet_wrap(~ motif_B, scales = "free_x") +
+#    theme_bw()
+
+# save plot
+#ggsave("plots/motif_B_relative_to_A_CA.pdf", plt, width = 49, height = 49, units = "in")
+```
+
+This shows the secondary motif found in the paper using MEME analysis, lets add in other heuristics to see if there are more generalisable
+rules for finding secondary motif binding sites.
+
+```{r, echo=FALSE, warning=FALSE}
+# df with detected signal peptides
+signal_peptide_df <- all %>%
+    filter(seqid %in% signal_peptide_genes) %>%
+    mutate(cat = "signal peptide")
+
+# list with genes with 2X CNYT 100nt upstream of start codon
+CNYT_100nt_2X <- count_motifs(RNA_path, "CNYTCNYT") %>%
+    filter(count_up_100 >= 2) %>%
+    pull(seqid)
+
+# df with genes with 2X CNYT 100nt upstream of start codon
+CNYT_100nt_2X_df <- all %>%
+    filter(seqid %in% CNYT_100nt_2X) %>%
+    mutate(cat = "2X CNYT 100nt upstream")
+
+combined_heuristics <- rbind(all, enriched, signal_peptide_df, CNYT_100nt_2X_df)
+
+# plot motif B relative to motif A for CRAC, SP, CNYT 2X count and all genes
+ggplot(combined_heuristics, aes(x = motif_B_start, colour = cat)) +
+    geom_histogram(binwidth = 1) +
+    facet_wrap(~ motif_B, scales = "free_x") +
+    theme_bw() + 
+    labs(title = "Motif B start position relative to motif A (stacked histograms)", x = "Motif B start position", y = "Count")
+```
+
+These histograms are stacked because there are more than two categories, so lower ones are hidden by higher ones.
+This shows that there does seem to be a little bit of correlation with signal peptide detection and the CRAC enriched positions.
+
+## Other Species
+For this example we will use Candida Albicans, and use signal peptide detection as the heuristic for Ssd-1 binding.
+
+```{r, echo=FALSE, warning=FALSE, results='hide'}
+# define paths
+protein_path <- here("data", "Proteins", "CA_first_60.fasta")
+RNA_path <- here("data", "RNA", "CA_999.fasta")
+
+# read in AA strings
+AA_stringset <- readAAStringSet(protein_path)
+
+# grab protein names
+protein_names <- names(AA_stringset)
+
+# run signalP and Phobius on protein sequences
+other_signalp_output <- signalp(protein_path)
+other_phobius_output <- r_phobius(protein_path)
+
+# combine dfs
+combined_df <- other_signalp_output %>%
+    full_join(other_phobius_output, by = "seqid")
+
+# read in 5'UTR FASTA
+input_RNA <- readDNAStringSet(RNA_path)
+
+# find motif pairs and filter for heuristics
+all <- find_motif_pairs(input_RNA, "CNYTCNYT", "CCNNCT", window_left = 53, window_right = 4, isPath = FALSE) %>%
+    mutate(cat = "all")
+signal_peptide_genes <- combined_df %>%
+    mutate(both = paste(phobius_type, signalp_type)) %>%
+    filter(both != "OTHER OTHER") %>%
+    pull(seqid)
+signal_peptide_df <- all %>%
+    filter(seqid %in% signal_peptide_genes) %>%
+    mutate(cat = "signal peptide")
+
+combined_heuristics <- rbind(all, signal_peptide_df)
+
+# plot motif B relative to motif A for SP and all genes
+ggplot(combined_heuristics, aes(x = motif_B_start, colour = cat)) +
+    geom_histogram(binwidth = 1) +
+    facet_wrap(~ motif_B, scales = "free_x") +
+    theme_bw() + 
+    labs(title = "Motif B start position relative to motif A (stacked histograms)", x = "Motif B start position", y = "Count")
 ```

@@ -77,7 +77,7 @@ find_motifs <- function(input_path, motif, motif_lim = NULL, isPath = TRUE) {
     motif_matches <- data.frame(vmatchPattern(pattern = DNAString(motif),
                                         subject = input_RNA,
                                         fixed = "subject")) %>%
-                                        select(group, start, end, width)
+                                        select(group, start, end)
     motif_matches$seqid <- input_ids[motif_matches$group]
 
     return(motif_matches)
@@ -120,9 +120,13 @@ iupac_to_ACGT <- function(iupac_code) {
 # and searches for motif B in a range downstream of motif A
 # motif A is not fixed, motif B is fixed within ambiguity codes
 # returns dataframe with motif B codes and counts
-count_motif_pairs <- function(input_path, motif_A = "CNYTCNYT", motif_B = "CCNNCT", window_left = 15, window_right = 4, motif_A_lim = NULL) {
+count_motif_pairs <- function(input_path, motif_A = "CNYTCNYT", motif_B = "CCNNCT", window_left = 15, window_right = 4, motif_A_lim = NULL, isPath = TRUE) {
     # load fasta file and find motif A
-    input_RNA <- readDNAStringSet(input_path)
+    if (isPath) {
+        input_RNA <- readDNAStringSet(input_path)
+    } else {
+        input_RNA <- input_path
+    }
     motif_A_matches <- find_motifs(input_RNA, motif_A, motif_A_lim, isPath = FALSE)
 
     # subset motif A sequences by window size
@@ -154,9 +158,13 @@ count_motif_pairs <- function(input_path, motif_A = "CNYTCNYT", motif_B = "CCNNC
 # function that takes a 5'UTR FASTA, finds the locations of motif A
 # and searches for motif B in a range upstream of motif A
 # returns dataframe with motif A starts and motif B relative starts and B sequence
-find_motif_pairs <- function(input_path, motif_A, motif_B, window_left = 15, window_right = 4, motif_A_lim = NULL) {
+find_motif_pairs <- function(input_path, motif_A, motif_B, window_left = 15, window_right = 4, motif_A_lim = NULL, isPath = TRUE) {
     # load fasta file and find motif A
-    input_RNA <- readDNAStringSet(input_path)
+    if (isPath) {
+        input_RNA <- readDNAStringSet(input_path)
+    } else {
+        input_RNA <- input_path
+    }
     motif_A_matches <- find_motifs(input_RNA, motif_A, motif_A_lim, isPath = FALSE)
     
     # generate PDict for motif B
@@ -191,10 +199,3 @@ find_motif_pairs <- function(input_path, motif_A, motif_B, window_left = 15, win
     
     return(match_df)
 }
-
-test <- find_motif_pairs("data/RNA/SC_999.fasta", "CNYTCNYT", "CCNNCT", window_left = 53, window_right = 4)
-
-ggplot(test, aes(x = motif_B_start)) +
-    geom_histogram(binwidth = 1) +
-    facet_wrap(~ motif_B, scales = "free_x") +
-    theme_bw()

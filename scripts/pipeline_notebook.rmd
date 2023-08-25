@@ -27,7 +27,7 @@ signalp_output <- signalp(protein_path)
 phobius_output <- r_phobius(protein_path)
 
 # run motif analysis on 5'UTRs
-motif_results <- find_motifs(RNA_path)
+motif_results <- count_motifs(RNA_path, "CNYTCNYT")
 
 # combine dfs
 combined_df <- signalp_output %>%
@@ -50,44 +50,12 @@ the underlying bimodal distribution to categorise the proteins into the two SRP 
 ```{r}
 library(mixtools)
 
-# find hydrophobicity scores for each protein
-phobius_no_NA <- combined_df %>%
-    filter(phobius_type != "OTHER")
-signalp_no_NA <- combined_df %>%
-    filter(signalp_type != "OTHER")
+# find compound hydrophobicity score for each protein with a signal peptide
+score_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE)
+no_NA <- score_df %>%
+    drop_na(compound_hydropathy)
 
-phobius_df <- data.frame(seqid = character(), phobius_compound_hydro = numeric())
-signalp_df <- data.frame(seqid = character(), signalp_compound_hydro = numeric())
-for(i in seq_len(nrow(phobius_no_NA))) {
-    hydrophobicity_df <- hydropathy_local(AA_stringset[phobius_no_NA$seqid[i]])
-    max_hydrophobicity <- hydrophobicity_df %>%
-        filter(Position >= phobius_no_NA$phobius_start[i]) %>%
-        filter(Position <= phobius_no_NA$phobius_end[i]) %>%
-        summarise(max_hydrophobicity = max(WindowHydropathy)) %>%
-        pull(max_hydrophobicity)
-
-    window_length <- phobius_no_NA$phobius_end[i] - phobius_no_NA$phobius_start[i] + 1
-    compound_hydropathy_score <- max_hydrophobicity * window_length
-    phobius_df <- rbind(phobius_df, data.frame(seqid = phobius_no_NA$seqid[i], phobius_compound_hydro = compound_hydropathy_score))
-}
-for(i in seq_len(nrow(signalp_no_NA))) {
-    hydrophobicity_df <- hydropathy_local(AA_stringset[signalp_no_NA$seqid[i]])
-    max_hydrophobicity <- hydrophobicity_df %>%
-        filter(Position >= signalp_no_NA$signalp_start[i]) %>%
-        filter(Position <= signalp_no_NA$signalp_end[i]) %>%
-        summarise(max_hydrophobicity = max(WindowHydropathy)) %>%
-        pull(max_hydrophobicity)
-
-    window_length <- signalp_no_NA$signalp_end[i] - signalp_no_NA$signalp_start[i] + 1
-    compound_hydropathy_score <- max_hydrophobicity * window_length
-    signalp_df <- rbind(signalp_df, data.frame(seqid = signalp_no_NA$seqid[i], signalp_compound_hydro = compound_hydropathy_score))
-}
-
-combined_df <- combined_df %>%
-    full_join(phobius_df, by = "seqid") %>%
-    full_join(signalp_df, by = "seqid")
-
-mixed_model <- normalmixEM(phobius_df$phobius_compound_hydro, k = 2)
+mixed_model <- normalmixEM(no_NA$compound_hydropathy, k = 2)
 
 # find intersection of two normal distributions
 intersection <- uniroot(function(x) {
@@ -97,7 +65,7 @@ average <- mean(mixed_model$mu)
 
 # plot distribution of scores with mixture model using ggplot2
 # with an overlay of the two normal distributions
-ggplot(phobius_df, aes(x = phobius_compound_hydro)) +
+ggplot(no_NA, aes(x = compound_hydropathy)) +
     geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "white", colour = "black") + 
     stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), colour = "red") +
     stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), colour = "green") +
@@ -106,3 +74,52 @@ ggplot(phobius_df, aes(x = phobius_compound_hydro)) +
     labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores (Cerevisiae)") +
     theme_bw()
 ```
+
+This is a plot of the distribution of compound hydrophobicity scores for proteins with signal peptides in S. cerevisiae.
+The red and green lines are the two normal distributions that make up the mixture model, and the dashed lines are possible classification boundaries,
+one at the intersection of the two normal distributions and one at the average of the two means.
+
+Now we can use the binding motif or CRAC data to find out if Ssd-1 significantly targets one of these groups.
+```{r}
+# use mixed model and intersection to classify proteins into SRP groups, and make motif count groups
+grouped_df <- score_df %>%
+    drop_na(compound_hydropathy) %>%
+    mutate(SRP_group = case_when(
+        compound_hydropathy < intersection ~ "non_SRP",
+        compound_hydropathy >= intersection ~ "SRP"
+    )) %>%
+    mutate(count_group = case_when(
+        count_up_200 >= 1 ~ "1X 200nt",
+        TRUE ~ "0X"
+    )) %>%
+    select(seqid, SRP_group, count_group, compound_hydropathy)
+
+percentage_SRP_groups <- grouped_df %>%
+    group_by(SRP_group) %>%
+    summarise(percentage = n()/nrow(grouped_df) * 100)
+
+# plot histogram of compound hydrophobicity scores for each SRP group
+ggplot(grouped_df, aes(x = compound_hydropathy, fill = SRP_group)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 50, colour = "black") +
+    facet_wrap(~count_group) +
+    labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores (Cerevisiae)") +
+    theme_bw()
+
+# plot bar chart of percentage of proteins in each SRP group
+ggplot(grouped_df, aes(x = SRP_group, fill = SRP_group)) +
+    geom_bar() +
+    facet_wrap(~count_group) +
+    labs(x = "SRP Group", y = "Count", title = "Number of Proteins in Each SRP Group (Cerevisiae)") +
+    theme_bw()
+
+# make contingency table
+contingency_table <- grouped_df %>%
+    count(count_group, SRP_group) %>%
+    spread(SRP_group, n, fill = 0)
+
+# run chi-squared test
+chisq.test(contingency_table[,2:3])
+```
+
+The plot shows the distribution of hydrophobicity scores for the no CNYTCNYT motif and 1X 200nt CNYTCNYT motif groups.
+The chi-squared test shows that the SRP groups are significantly dependent on the motif groups, indicating that the Ssd-1 binding motif is significantly enriched in the non-SRP group.

@@ -33,7 +33,7 @@ KD <- data.frame(V1 = KDNorm$V1, V2 = round((KDNorm$V2 * 9) - 4.5, 1))
 
 # function that calculates the local hydropathy of a protein
 # from idpr package, modified to use non normalised weights
-hydropathy_local <- function(sequence, window = 9, scale = "Kyte-Doolittle") {
+hydropathy_local <- function(sequence, window = 9, scale = KD) {
     seqVector <- sequenceCheck(sequence = sequence, nonstandardResidues = c('X'), method = "stop", 
         outputType = "vector", suppressOutputMessage = TRUE, suppressAAWarning = TRUE)
     if ((window%%2) == 0) {
@@ -51,7 +51,7 @@ hydropathy_local <- function(sequence, window = 9, scale = "Kyte-Doolittle") {
     for (i in seq_len(numberResiduesAnalyzed)) {
         sequenceWindow <- seqVector[i:(i + (window - 1))]
         windowVector[i] <- paste0(sequenceWindow, collapse = "")
-        windowValues <- KD$V2[match(sequenceWindow, KD$V1)]
+        windowValues <- scale$V2[match(sequenceWindow, scale$V1)]
         scoreVector[i] <- sum(windowValues)/window
     }
     windowDF <- data.frame(Position = positionVector, Window = windowVector, 
@@ -63,12 +63,12 @@ hydropathy_local <- function(sequence, window = 9, scale = "Kyte-Doolittle") {
 
 
 # function that calculates the mean hydropathy of a protein
-mean_hydropathy <- function(sequence) {
+mean_hydropathy <- function(sequence, scale = KD) {
     seqCharacterVector <- sequenceCheck(sequence = sequence, method = "stop", 
         outputType = "vector", suppressOutputMessage = TRUE)
     
     seqLength <- length(seqCharacterVector)
-    scoreVector <- KD$V2[match(seqCharacterVector, KDNorm$V1)]
+    scoreVector <- scale$V2[match(seqCharacterVector, scale$V1)]
     mean(scoreVector)
 }
 #mean_hydropathy(example_protein)
@@ -102,9 +102,21 @@ plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
     # use phobius to find the hydropathy window
     hydropathy_window <- c(find_hydropathy_windows(protein_AAStringSet, isString = TRUE)[1,])
 
+    if (hydropathy_window$start == hydropathy_window$end) {
+        print("No hydropathy window found")
+        return()
+    }
+
     hydropathy_df <- hydropathy_local(protein_AAStringSet)
     max_hydropathy_row <- hydropathy_df %>%
         filter(WindowHydropathy == max(WindowHydropathy))
+    max_hydropathy_row$WindowHydropathy <- round(max_hydropathy_row$WindowHydropathy, 2)
+
+    if (dim(max_hydropathy_row)[1] > 1) {
+        text_angle <- 50
+    } else {
+        text_angle <- 0
+    }
 
     ggplot(hydropathy_df, aes(x = Position, y = WindowHydropathy)) + 
         geom_path() + 
@@ -112,7 +124,8 @@ plot_hydropathy_window <- function(protein_AAStringSet, window_size = 9) {
         geom_vline(xintercept = hydropathy_window$start, linetype = "dashed", colour = "red") +
         geom_vline(xintercept = hydropathy_window$end, linetype = "dashed", colour = "red") +
         geom_point(data = max_hydropathy_row, aes(x = Position, y = WindowHydropathy), colour = "black") +
-        geom_text(data = max_hydropathy_row, aes(x = Position, y = WindowHydropathy, label = WindowHydropathy), vjust = -1) +
+        geom_text(data = max_hydropathy_row, aes(x = Position, y = WindowHydropathy, label = WindowHydropathy), vjust = -1, angle=text_angle) +
+        geom_rect(aes(xmin = hydropathy_window$start, xmax = hydropathy_window$end, ymin = 0, ymax = max_hydropathy_row$WindowHydropathy[1]), alpha = 0.01, fill = "lightblue") +
         labs(x = "Position", y = "Hydropathy", title = "Hydropathy of protein", colour = "Location")
 }    
 #plot_hydropathy_window(example_protein, 9)
@@ -134,12 +147,15 @@ compound_hydropathy_score <- function(protein_AAStringSet, window_size = 9) {
 # with the phobius results for each protein, if a SP or TM region
 # is detected, window bounds are returned
 r_phobius <- function(protein_AA_path) {
-    if (exists("phobius_output")) {
-        print("phobius_output already exists, checking if the same...")
-        if (length(phobius_output) == length(readAAStringSet(protein_AA_path))) {
-            print("same length, not running again")
-            return(phobius_output)
-        }
+    # extract file name from path, replace .fasta with _out
+    file_name <- gsub(".fasta", "", basename(protein_AA_path))
+
+    # create output path
+    out_path <- paste0(here("results", "phobius", file_name), ".csv")
+
+    # check if output path exists, if it does, exit function
+    if (file.exists(out_path)) {
+        return(read_csv(out_path))
     }
 
     # call phobius on file
@@ -151,6 +167,9 @@ r_phobius <- function(protein_AA_path) {
         ))
     colnames(hydropathy_windows) <- c("seqid", "phobius_start", "phobius_end", "phobius_type")
 
+    # write to file
+    write_csv(hydropathy_windows, out_path)
+
     return(hydropathy_windows)
 }
 
@@ -160,7 +179,7 @@ r_phobius <- function(protein_AA_path) {
 # a hydrophobicity index and returns that dataframe with the 
 # compound hydropathy score for each protein
 # can optionally prioritise signalp over phobius
-add_compound_hydropathy_score <- function(input_window_df, AA_stringset, hydrophobicity_index = KD, useSignalP = FALSE, plot_results = FALSE, scale = "Kyte-Doolittle", window = 9) {
+add_compound_hydropathy_score <- function(input_window_df, AA_stringset, scale = KD, useSignalP = FALSE, window = 9) {
     # checking whether or not to use signalp windows
     if (useSignalP) {
         # check signalp_start and signalp_end are column names in protein_window_df
