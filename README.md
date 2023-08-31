@@ -12,4 +12,5 @@
 
 It takes in two FASTA files – the transcriptome and proteome of the target species – and detects SPs and TMs. It then uses these and hydrophobicity index scores to split this detected set into two groups, one that uses the SRP and one that doesn't.
 Combining these groupings with those from primary Ssd-1 binding motif (CNYTCNYT) detection, and the results are these distribution and population differences:
-![histogram of hydropathy by SRP and motif](https://github.com/TristanSones-Dykes/SSD_SP_Motif/blob/master/plots/plot%201.png)
+
+<img src="[image1.png](https://github.com/TristanSones-Dykes/SSD_SP_Motif/blob/master/plots/plot%201.png)https://github.com/TristanSones-Dykes/SSD_SP_Motif/blob/master/plots/plot%201.png" width="50%"/> <img src="[image2.png](https://github.com/TristanSones-Dykes/SSD_SP_Motif/blob/master/plots/plot%202.png)https://github.com/TristanSones-Dykes/SSD_SP_Motif/blob/master/plots/plot%202.png" width="50%"/> 
