@@ -41,6 +41,8 @@ You activate it using:
 conda activate ssd_env
 ```
 
+If it is too slow or seems to hang, you might want to consider using [Mamba](https://anaconda.org/conda-forge/mamba) (it is essentially conda written in C++ so is far faster).
+
 #### SignalP installation
 
 To install SignalP6, you need to fill in [this form](https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=signalp&version=6.0&packageversion=6.0h&platform=fast) with your academic details and follow [their installation instructions](https://github.com/fteufel/signalp-6.0/blob/main/installation_instructions.md).
