@@ -15,7 +15,7 @@ library(reticulate)
 # using the phobius online tool (does not require it to be installed)
 
 
-source_python(here("src", "phobius.py"))
+try(source_python(here("src", "phobius.py")), silent = TRUE)
 KD <- data.frame(V1 = KDNorm$V1, V2 = round((KDNorm$V2 * 9) - 4.5, 1))
 
 
