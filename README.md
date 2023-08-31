@@ -36,12 +36,17 @@ conda create --name ssd_env --file requirements.txt
 ```
 Feel free to replace `ssd_env` with whatever you want to call it.
 
+You activate it using:
+```
+conda activate ssd_env
+```
+
 #### SignalP installation
 
 To install SignalP6, you need to fill in [this form](https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=signalp&version=6.0&packageversion=6.0h&platform=fast) with your academic details and follow [their installation instructions](https://github.com/fteufel/signalp-6.0/blob/main/installation_instructions.md).
 
 #### R libraries
-To install/check all the required libraries are installed, run this:
+When you open the project in a vscode terminal or RStudio, it should automatically call the renv using the .Rprofile. However, if it doesn't, run this and it should work.
 ```
 if (!require("renv", quietly = TRUE))
     install.packages("renv")
