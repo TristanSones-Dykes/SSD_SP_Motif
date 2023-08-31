@@ -53,3 +53,8 @@ if (!require("renv", quietly = TRUE))
 
 renv::restore()
 ```
+
+## How to use
+You can generate the Rmd documents using `rmarkdown::render("<file_name>")` and can use them as a usage guide for the functions defined. If you want to use a set of the functions in another doc or project, you can call them using `source("<file_name>")`
+
+For the species' data that is already in the repo, SignalP and Phobius results have been saved so they are called very quickly (as long as you use the correct file names), but new inputs will have to run the analyses (locally for SignalP, as long as you have installed it, or calling it remotely for Phobius) and this can take quite a lot of time.
