@@ -43,4 +43,8 @@ To install SignalP6, you need to fill in [this form](https://services.healthtech
 #### R libraries
 To install/check all the required libraries are installed, run this:
 ```
+if (!require("renv", quietly = TRUE))
+    install.packages("renv")
+
+renv::restore()
 ```
