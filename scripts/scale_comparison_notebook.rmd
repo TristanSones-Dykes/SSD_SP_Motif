@@ -1,0 +1,107 @@
+---
+title: "Hydrophobicity Scale Comparison"
+author: "Tristan Sones-Dykes"
+date: "31/07/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(here)
+# grab functions from src
+source(here("src", "signal_peptides.r"))
+source(here("src", "hydrophobicity.r"))
+source(here("src", "motif_analysis.r"))
+
+# define paths
+protein_path <- here("data", "Proteins", "SC_first_60.fasta")
+RNA_path <- here("data", "RNA", "SC_999.fasta")
+
+# read in AA strings
+AA_stringset <- readAAStringSet(protein_path)
+
+# grab protein names
+protein_names <- names(AA_stringset)
+
+# run signalP and Phobius on protein sequences
+signalp_output <- signalp(protein_path)
+phobius_output <- r_phobius(protein_path)
+
+# run motif analysis on 5'UTRs
+motif_results <- count_motifs(RNA_path, "CNYTCNYT")
+
+# combine dfs
+combined_df <- signalp_output %>%
+    full_join(phobius_output, by = "seqid") %>%
+    left_join(motif_results, by = "seqid")
+```
+
+### Summary
+In this doc, we compare all of the hydrophobicity scales on [this](https://resources.qiagenbioinformatics.com/manuals/clcgenomicsworkbench/650/Hydrophobicity_scales.html) site.
+
+```{r}
+library(mixtools)
+
+# dataframe for combining scale data
+scale_df <- data.frame(seqid = character(),
+                       p_other = numeric(),
+                       p_SP = numeric(),
+                       count_up_1000 = numeric(),
+                       count_up_200 = numeric(),
+                       count_up_100 = numeric(),
+                       window_start = numeric(),
+                       window_end = numeric(),
+                       window_type = character(),
+                       window_origin = character(),
+                       compound_hydropathy = numeric(),
+                       scale_name = character())
+
+mixture_model_df <- data.frame(scale_name = character(),
+                               mu_1 = numeric(),
+                               mu_2 = numeric(),
+                               sigma_1 = numeric(),
+                               sigma_2 = numeric(),
+                               #intersection = numeric(),
+                               average = numeric())
+
+for (i in 3:ncol(scales)) {
+    scale_name <- colnames(scales)[i]
+    cols <- c("aa", scale_name)
+    scale <- scales[, cols]
+    colnames(scale) <- c("V1", "V2")
+
+    # find compound hydrophobicity score for each protein with a signal peptide
+    score_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = scale) %>% 
+        drop_na(compound_hydropathy)
+
+    # add to scale_df
+    scale_df <- rbind(scale_df, score_df %>%
+        mutate(scale_name = scale_name))
+
+    mixed_model <- normalmixEM(score_df$compound_hydropathy, k = 2)
+
+    # find intersection of two normal distributions
+    #intersection <- uniroot(function(x) {
+    #    dnorm(x, mean = mixed_model$mu[1], sd = mixed_model$sigma[1]) - dnorm(x, mean = mixed_model$mu[2], sd = mixed_model$sigma[2])
+    #}, c(min(mixed_model$mu), max(mixed_model$mu)))$root
+    average <- mean(mixed_model$mu)
+
+    # add to mixture_model_df
+    mixture_model_df <- rbind(mixture_model_df, data.frame(scale_name = scale_name,
+                                                           mu_1 = mixed_model$mu[1],
+                                                           mu_2 = mixed_model$mu[2],
+                                                           sigma_1 = mixed_model$sigma[1],
+                                                           sigma_2 = mixed_model$sigma[2],
+                                                           #intersection = intersection,
+                                                           average = average))
+}
+
+# make grid of score distribution plots using facet_grid vertically
+scale_df %>%
+    ggplot(aes(x = compound_hydropathy)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    facet_grid(scale_name ~ ., scales = "free_y") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    geom_vline(xintercept = average, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```

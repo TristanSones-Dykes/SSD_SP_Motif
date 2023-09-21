@@ -18,6 +18,8 @@ library(reticulate)
 try(source_python(here("src", "phobius.py")), silent = TRUE)
 KD <- data.frame(V1 = KDNorm$V1, V2 = round((KDNorm$V2 * 9) - 4.5, 1))
 
+scales <- read.csv("data/scales.csv", header = TRUE)
+
 
 #variables for testing
 #paper_df <- read_csv(here("data", "Proteins", "tslil_paper", "tslil_paper_protein_annotations.csv"))

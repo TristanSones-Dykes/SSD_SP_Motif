@@ -13,8 +13,8 @@ source(here("src", "hydrophobicity.r"))
 source(here("src", "motif_analysis.r"))
 
 # define paths
-protein_path <- here("data", "Proteins", "SC_first_60.fasta")
-RNA_path <- here("data", "RNA", "SC_999.fasta")
+protein_path <- here("data", "Proteins", "AN_first_60.fasta")
+RNA_path <- here("data", "RNA", "AN_999.fasta")
 
 # read in AA strings
 AA_stringset <- readAAStringSet(protein_path)
