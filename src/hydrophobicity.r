@@ -18,7 +18,7 @@ library(reticulate)
 try(source_python(here("src", "phobius.py")), silent = TRUE)
 KD <- data.frame(V1 = KDNorm$V1, V2 = round((KDNorm$V2 * 9) - 4.5, 1))
 
-scales <- read.csv("data/scales.csv", header = TRUE)
+scales <- read.csv(here("data", "scales.csv"), header = TRUE)
 
 
 #variables for testing

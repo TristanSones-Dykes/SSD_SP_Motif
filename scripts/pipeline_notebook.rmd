@@ -1,5 +1,5 @@
 ---
-title: "N. Crassa SRP Pipeline Report"
+title: "C. Albicans SRP Pipeline Report"
 author: "Tristan Sones-Dykes"
 date: "22/09/23"
 output: html_document
@@ -13,9 +13,10 @@ source(here("src", "hydrophobicity.r"))
 source(here("src", "motif_analysis.r"))
 
 # define paths
-protein_path <- here("data", "Proteins", "NC_first_60.fasta")
-RNA_path <- here("data", "RNA", "AN_999.fasta")
-out_name <- "N_Crassa_report"
+protein_path <- here("data", "Proteins", "CA_first_60.fasta")
+RNA_path <- here("data", "RNA", "CA_999.fasta")
+out_name <- "C_Albicans_report"
+out_path <- here("results", "reports/")
 
 # read in AA strings
 AA_stringset <- readAAStringSet(protein_path)
@@ -48,7 +49,7 @@ After running SignalP and Phobius, we can use the Kyte-Doolittle hydrophobicity 
 find the compound hydrophobicity score for each protein with a signal peptide, then find
 the underlying bimodal distribution to categorise the proteins into the two SRP groups.
 
-```{r}
+```{r, echo=FALSE, warning=FALSE}
 library(mixtools)
 
 # find compound hydrophobicity score for each protein with a signal peptide
@@ -74,14 +75,16 @@ ggplot(no_NA, aes(x = compound_hydropathy)) +
     geom_vline(xintercept = average, colour = "purple", linetype = "dashed") +
     labs(x = "Compound Hydrophobicity Score", y = "Density", title = "Distribution of Compound Hydrophobicity Scores (Cerevisiae)") +
     theme_bw()
+
+print(paste("Intersection of two normal distributions:", intersection))
 ```
 
-This is a plot of the distribution of compound hydrophobicity scores for proteins with signal peptides in N. Crassa.
+This is a plot of the distribution of compound hydrophobicity scores for proteins with signal peptides in the species.
 The red and green lines are the two normal distributions that make up the mixture model, and the dashed lines are possible classification boundaries,
 one at the intersection of the two normal distributions and one at the average of the two means.
 
 Now we can use the binding motif or CRAC data to find out if Ssd-1 significantly targets one of these groups.
-```{r}
+```{r, echo=FALSE, warning=FALSE}
 # use mixed model and intersection to classify proteins into SRP groups, and make motif count groups
 grouped_df <- score_df %>%
     drop_na(compound_hydropathy) %>%
@@ -110,7 +113,7 @@ ggplot(grouped_df, aes(x = compound_hydropathy, fill = SRP_group)) +
 ggplot(grouped_df, aes(x = SRP_group, fill = SRP_group)) +
     geom_bar() +
     facet_wrap(~count_group) +
-    labs(x = "SRP Group", y = "Count", title = "Number of Proteins in Each SRP Group (Cerevisiae)") +
+    labs(x = "SRP Group", y = "Count", title = "Number of Proteins in Each SRP Group") +
     theme_bw()
 
 # make contingency table

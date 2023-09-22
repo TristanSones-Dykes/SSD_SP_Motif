@@ -38,7 +38,7 @@ combined_df <- signalp_output %>%
 ### Summary
 In this doc, we compare all of the hydrophobicity scales on [this](https://resources.qiagenbioinformatics.com/manuals/clcgenomicsworkbench/650/Hydrophobicity_scales.html) site.
 
-```{r}
+```{r, echo=FALSE, warning=FALSE}
 library(mixtools)
 
 # dataframe for combining scale data
@@ -99,9 +99,132 @@ for (i in 3:ncol(scales)) {
 scale_df %>%
     ggplot(aes(x = compound_hydropathy)) +
     geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    geom_vline(xintercept = average, color = "blue") +
     facet_grid(scale_name ~ ., scales = "free_y") +
     #geom_vline(xintercept = intersection, color = "red") +
-    geom_vline(xintercept = average, color = "blue") +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+There is a wide range of distributions for the different scales. Some are bimodal, some are unimodal, some are skewed, some are symmetrical.
+Lets look at each distribution individually with their mixture models, intersections, and colour verified SRP independent proteins.
+
+```{r, echo=FALSE, warning=FALSE}
+verified_non_srp <- read_tsv(here("data", "SC_non_SRP.txt"), col_names = FALSE) %>%
+    pull(X1)
+
+marked_df <- scale_df %>%
+    mutate(verified_non_srp = ifelse(seqid %in% verified_non_srp, "yes", "no"))
+
+scale <- "Kyte.Doolittle"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
+
+scale <- "Engelman.GES"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
+
+scale <- "Cornette"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
+
+scale <- "Hopp.Woods"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
+
+scale <- "Janin"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
+
+scale <- "Rose"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
+
+scale <- "Eisenberg"
+row <- mixture_model_df %>%
+    filter(scale_name == scale)
+# plot distribution
+marked_df %>%
+    filter(scale_name == scale) %>%
+    ggplot(aes(x = compound_hydropathy, colour = verified_non_srp)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = row$mu_1[1], sd = row$sigma_1[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = row$mu_2[1], sd = row$sigma_2[1]), color = "green") +
+    geom_vline(xintercept = row$average[1], color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    ggtitle(scale)
 ```
