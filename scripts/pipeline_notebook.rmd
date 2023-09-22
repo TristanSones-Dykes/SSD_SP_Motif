@@ -1,7 +1,7 @@
 ---
-title: "<Species> SRP Pipeline Report"
+title: "N. Crassa SRP Pipeline Report"
 author: "Tristan Sones-Dykes"
-date: "31/07/23"
+date: "22/09/23"
 output: html_document
 ---
 
@@ -13,8 +13,9 @@ source(here("src", "hydrophobicity.r"))
 source(here("src", "motif_analysis.r"))
 
 # define paths
-protein_path <- here("data", "Proteins", "AN_first_60.fasta")
+protein_path <- here("data", "Proteins", "NC_first_60.fasta")
 RNA_path <- here("data", "RNA", "AN_999.fasta")
+out_name <- "N_Crassa_report"
 
 # read in AA strings
 AA_stringset <- readAAStringSet(protein_path)
@@ -75,7 +76,7 @@ ggplot(no_NA, aes(x = compound_hydropathy)) +
     theme_bw()
 ```
 
-This is a plot of the distribution of compound hydrophobicity scores for proteins with signal peptides in S. cerevisiae.
+This is a plot of the distribution of compound hydrophobicity scores for proteins with signal peptides in N. Crassa.
 The red and green lines are the two normal distributions that make up the mixture model, and the dashed lines are possible classification boundaries,
 one at the intersection of the two normal distributions and one at the average of the two means.
 
