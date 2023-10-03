@@ -1,0 +1,406 @@
+---
+title: "Classification Method Comparison Report"
+author: "Tristan Sones-Dykes"
+date: "02/10/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(here)
+# grab functions from src
+source(here("src", "signal_peptides.r"))
+source(here("src", "hydrophobicity.r"))
+source(here("src", "motif_analysis.r"))
+
+# libraries for modelling
+library(mixtools)
+library(randomForest)
+library(mclust)
+
+# dataframe for model performances
+model_df <- data.frame(name = character(), scale = character(), accuracy = numeric(), false_positive = numeric(), false_negative = numeric(), model_type = character())
+
+# define paths
+protein_path <- here("data", "Proteins", "SC_first_60.fasta")
+RNA_path <- here("data", "RNA", "SC_999.fasta")
+
+# read in AA strings
+AA_stringset <- readAAStringSet(protein_path)
+
+# grab protein names
+protein_names <- names(AA_stringset)
+
+# run signalP and Phobius on protein sequences
+signalp_output <- signalp(protein_path)
+phobius_output <- r_phobius(protein_path)
+
+# run motif analysis on 5'UTRs
+motif_results <- count_motifs(RNA_path, "CNYTCNYT")
+
+# combine dfs
+combined_df <- signalp_output %>%
+    full_join(phobius_output, by = "seqid") %>%
+    left_join(motif_results, by = "seqid")
+```
+
+## Summary 
+In this document, I compare some classification methods for SRP vs non SRP proteins using TM and SP region lengths and maximum hydropathy levels.
+This is through some clustering/unsupervised learning methods and some supervised learning methods.
+
+## Unsupervised Learning
+
+### Gaussian Mixture Model
+
+#### 1D Gaussian Mixture Model
+
+Initially, I used a mixture model on the length * max_height of the TM and SP regions, like in the original paper.
+This is a 2D plot of the data, with the mixture model fit to it; one for the Kyte-Doolittle and Rose scales.
+
+```{r, echo=FALSE, warning=FALSE}
+screened_non_srp <- read_tsv(here("data", "SC_screened.txt"), col_names = FALSE, show_col_types = FALSE) %>%
+    pull(X1)
+
+verified_srp <- read_tsv(here("data", "SC_SRP.txt"), col_names = FALSE, show_col_types = FALSE) %>%
+    pull(X1)
+
+verified_non_srp <- read_tsv(here("data", "SC_non_SRP.txt"), col_names = FALSE, show_col_types = FALSE) %>%
+    pull(X1)
+
+# getting compound hydropathy scores for both scales
+scale_name <- "Rose"
+cols <- c("aa", scale_name)
+rose <- scales[, cols]
+colnames(rose) <- c("V1", "V2")
+
+
+# adding compound hydropathy scores
+kd_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, include_max = TRUE) %>% 
+    drop_na(compound_hydropathy) %>% 
+    mutate(window_length = window_end - window_start)
+rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = rose, include_max = TRUE) %>% 
+    drop_na(compound_hydropathy) %>% 
+    mutate(window_length = window_end - window_start)
+
+set.seed(999)
+# fitting mixture models
+kd_1D_model <- normalmixEM(kd_df$compound_hydropathy, k = 2)
+rose_1D_model <- normalmixEM(rose_df$compound_hydropathy, k = 2)
+
+# calculating intersection of distributions
+kd_intersection <- uniroot(function(x) {
+    dnorm(x, mean = kd_1D_model$mu[1], sd = kd_1D_model$sigma[1]) - dnorm(x, mean = kd_1D_model$mu[2], sd = kd_1D_model$sigma[2])
+}, c(min(kd_1D_model$mu), max(kd_1D_model$mu)))$root
+rose_intersection <- uniroot(function(x) {
+    dnorm(x, mean = rose_1D_model$mu[1], sd = rose_1D_model$sigma[1]) - dnorm(x, mean = rose_1D_model$mu[2], sd = rose_1D_model$sigma[2])
+}, c(min(rose_1D_model$mu), max(rose_1D_model$mu)))$root
+
+# adding SRP usage tags and predictions
+marked_rose_df <- rose_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "either")) %>%
+    mutate(prediction = case_when(compound_hydropathy < rose_intersection ~ "no",
+                                  TRUE ~ "yes"))
+marked_kd_df <- kd_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "either")) %>%
+    mutate(prediction = case_when(compound_hydropathy < kd_intersection ~ "no",
+                                  TRUE ~ "yes"))
+
+# plot kd distribution with SRP labels
+marked_kd_df %>%
+    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = kd_1D_model$mu[1], sd = kd_1D_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = kd_1D_model$mu[2], sd = kd_1D_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = kd_intersection, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("S. Cerevisiae")
+
+# plot kd distribution with SRP labels
+marked_rose_df %>%
+    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = rose_1D_model$mu[1], sd = rose_1D_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = rose_1D_model$mu[2], sd = rose_1D_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = rose_intersection, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("S. Cerevisiae")
+```
+
+It looks like the Rose scale has split the populations better then Kyte-Doolittle scale. Let's compare the empirical errors of the two scales.
+
+```{r, echo=FALSE, warning=FALSE}
+# calculating errors
+rose_error <- marked_rose_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+kd_error <- marked_kd_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+
+# false positive and negative
+rose_fp <- marked_rose_df %>%
+    filter(SRP == "no") %>%
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>%
+    pull(fp)
+rose_fn <- marked_rose_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>%
+    pull(fn)
+kd_fp <- marked_kd_df %>%
+    filter(SRP == "no") %>% 
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>%
+    pull(fp)
+kd_fn <- marked_kd_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>%
+    pull(fn)
+
+print(paste("Rose error:", round(rose_error, 4)))
+print(paste("KD error:", round(kd_error, 4)))
+
+print(paste("Rose false positive:", round(rose_fp, 4), "Rose false negative:", round(rose_fn, 4)))
+print(paste("KD false positive:", round(kd_fp, 4), "KD false negative:", round(kd_fn, 4)))
+
+# add them all to model_df
+model_df <- model_df %>% 
+    add_row(name = "Compound GMM", scale = "Rose", accuracy = rose_error, false_positive = rose_fp, false_negative = rose_fn, model_type = "Unsupervised") %>% 
+    add_row(name = "Compound GMM", scale = "KD", accuracy = kd_error, false_positive = kd_fp, false_negative = kd_fn, model_type = "Unsupervised")
+```
+
+Rose has more negatives and less false positives, but overall very similar error.
+Let's scatter the scales in 2D and see if we can see any patterns.
+
+---
+
+#### 2D Gaussian Mixture Model
+
+```{r, echo=FALSE, warning=FALSE}
+marked_rose_df %>% 
+    filter(SRP == "yes" | SRP == "no") %>%
+    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP)) + 
+    geom_jitter(height = 0.5) + 
+    ggtitle("Rose scatter plot of only verified proteins (with jitter on Y)") + 
+    xlab("Max hydropathy (Rose)")
+
+marked_kd_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP)) + 
+    geom_jitter(height = 0.5) + 
+    ggtitle("KD scatter plot of only verified proteins (with jitter on Y)") + 
+    xlab("Max hydropathy (Kyte-Doolittle)")
+
+ggplot(marked_rose_df, aes(x = window_length, colour = SRP)) + 
+    geom_histogram(binwidth = 1)
+```
+
+In the 2D scatter plots, we can see that there are two clear clusters of SRP and non-SRP proteins for both scales.
+This seems to primarily come from the window length, as is shown in the histogram.
+
+Lets fit a 2D mixture model to the data and calculate errors.
+
+```{r, echo=FALSE, warning=FALSE}
+cluster_rose_df <- marked_rose_df %>% 
+    filter(SRP == "yes" | SRP == "no") %>%
+    select(max_hydropathy, window_length, SRP)
+
+cluster_kd_df <- marked_kd_df %>% 
+    filter(SRP == "yes" | SRP == "no") %>%
+    select(max_hydropathy, window_length, SRP)
+
+# fitting mixture models
+rose_2D_model <- Mclust(cluster_rose_df[,1:2], G = 2)
+kd_2D_model <- Mclust(cluster_kd_df[,1:2], G = 2)
+
+# add predictions
+cluster_rose_df <- cluster_rose_df %>%
+    mutate(prediction = as.character(rose_2D_model$classification)) %>% 
+    mutate(prediction = case_when(prediction == "1" ~ "no",
+                                  prediction == "2" ~ "yes")) %>% 
+    mutate(scale = "Rose")
+
+cluster_kd_df <- cluster_kd_df %>% 
+    mutate(prediction = as.character(kd_2D_model$classification)) %>% 
+    mutate(prediction = case_when(prediction == "1" ~ "no",
+                                  prediction == "2" ~ "yes")) %>% 
+    mutate(scale = "KD")
+
+plot(rose_2D_model, what = "classification")
+plot(kd_2D_model, what = "classification")
+
+# plot distributions with model function
+cluster_rose_df %>%
+    rbind(cluster_kd_df) %>%
+    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP, shape = prediction)) +
+    geom_point() + 
+    facet_wrap(~scale, ncol = 2, nrow = 1, scales = "free")
+
+# calculating errors
+rose_error <- cluster_rose_df %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+kd_error <- cluster_kd_df %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+
+# false positive and negative
+rose_fp <- cluster_rose_df %>%
+    filter(SRP == "no") %>%
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>% 
+    pull(fp)
+rose_fn <- cluster_rose_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>% 
+    pull(fn)
+kd_fp <- cluster_kd_df %>%
+    filter(SRP == "no") %>% 
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>% 
+    pull(fp)
+kd_fn <- cluster_kd_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>% 
+    pull(fn)
+
+print(paste("Rose error:", round(rose_error, 4)))
+print(paste("KD error:", round(kd_error, 4)))
+
+print(paste("Rose false positive:", round(rose_fp, 4), "Rose false negative:", round(rose_fn, 4)))
+print(paste("KD false positive:", round(kd_fp, 4), "KD false negative:", round(kd_fn, 4)))
+
+# add them all to model_df
+model_df <- model_df %>% 
+    add_row(name = "2D GMM", scale = "Rose", accuracy = rose_error, false_positive = rose_fp, false_negative = rose_fn, model_type = "Unsupervised") %>% 
+    add_row(name = "2D GMM", scale = "KD", accuracy = kd_error, false_positive = kd_fp, false_negative = kd_fn, model_type = "Unsupervised")
+```
+
+The accuracy is basically the same as for the 1D model, and for both scales is identical.
+I'm going to try classifying based only on the window length, as this seems to be the main factor in the clustering.
+
+---
+
+#### Accuracy of only window length
+
+Because the window length is not dependent on the scale, there is only one model.
+    
+```{r, echo=FALSE, warning=FALSE}
+# fitting mixture models
+window_model <- normalmixEM(cluster_rose_df$window_length, k = 2)
+
+# calculating intersection of distributions
+window_intersection <- uniroot(function(x) {
+    dnorm(x, mean = window_model$mu[1], sd = window_model$sigma[1]) - dnorm(x, mean = window_model$mu[2], sd = window_model$sigma[2])
+}, c(min(window_model$mu), max(window_model$mu)))$root
+
+# adding SRP usage tags and predictions
+marked_window_df <- cluster_rose_df %>%
+    mutate(prediction = case_when(window_length < window_intersection ~ "no",
+                                  TRUE ~ "yes"))
+
+# calculating errors
+window_error <- marked_window_df %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+
+# false positive and negative
+window_fp <- marked_window_df %>%
+    filter(SRP == "no") %>%
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>% 
+    pull(fp)
+window_fn <- marked_window_df %>% 
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>% 
+    pull(fn)
+
+# plot window length distribution with SRP labels
+marked_window_df %>%
+    ggplot(aes(x = window_length, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = window_model$mu[1], sd = window_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = window_model$mu[2], sd = window_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = window_intersection, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("S. Cerevisiae")
+
+print(paste("window error:", round(window_error, 4)))
+print(paste("window false positive:", round(window_fp, 4), "window false negative:", round(window_fn, 4)))
+
+# add them all to model_df
+model_df <- model_df %>% 
+    add_row(name = "Window Length GMM", scale = "NA", accuracy = window_error, false_positive = window_fp, false_negative = window_fn, model_type = "Unsupervised")
+```
+
+This accuracy is the same as the compound hydropathy and 2D models for Rose.
+
+---
+
+#### K-means
+
+I'll only do K-means on Rose as both scales seem to cluster the data identically
+
+```{r, echo=FALSE, warning=FALSE}
+# fitting kmeans
+kmeans_model <- kmeans(cluster_rose_df[,1:2], centers = 2)
+
+# add predictions
+cluster_df <- cluster_rose_df %>%
+    mutate(prediction = as.character(kmeans_model$cluster)) %>% 
+    mutate(prediction = case_when(prediction == "2" ~ "no",
+                                  prediction == "1" ~ "yes")) %>% 
+    mutate(scale = "Rose")
+
+# plot predictions
+cluster_df %>%
+    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP, shape = prediction)) +
+    geom_point() + 
+    geom_hline(yintercept = 14, color = "blue")
+
+# calculate errors
+kmeans_error <- cluster_df %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+
+# false positive and negative
+kmeans_fp <- cluster_df %>%
+    filter(SRP == "no") %>%
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>% 
+    pull(fp)
+kmeans_fn <- cluster_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>% 
+    pull(fn)
+
+print(paste("kmeans error:", round(kmeans_error, 4)))
+print(paste("kmeans false positive:", round(kmeans_fp, 4), "kmeans false negative:", round(kmeans_fn, 4)))
+
+# add them all to model_df
+model_df <- model_df %>% 
+    add_row(name = "K-means", scale = "Rose", accuracy = kmeans_error, false_positive = kmeans_fp, false_negative = kmeans_fn, model_type = "Unsupervised")
+```
+
+---
+
+#### Unsupervised Summary 
+Here is a table of the unsupervised models and their performances:
+    
+```{r, echo=FALSE, warning=FALSE}
+model_df %>% 
+    filter(model_type == "Unsupervised") %>% 
+    select(name, scale, accuracy, false_positive, false_negative) %>% 
+    knitr::kable(digits = 3)
+```
+

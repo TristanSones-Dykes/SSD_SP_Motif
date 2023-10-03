@@ -181,7 +181,7 @@ r_phobius <- function(protein_AA_path) {
 # a hydrophobicity index and returns that dataframe with the 
 # compound hydropathy score for each protein
 # can optionally prioritise signalp over phobius
-add_compound_hydropathy_score <- function(input_window_df, AA_stringset, scale = KD, useSignalP = FALSE, window = 9) {
+add_compound_hydropathy_score <- function(input_window_df, AA_stringset, scale = KD, useSignalP = FALSE, window = 9, include_max = FALSE) {
     # checking whether or not to use signalp windows
     if (useSignalP) {
         # check signalp_start and signalp_end are column names in protein_window_df
@@ -225,7 +225,11 @@ add_compound_hydropathy_score <- function(input_window_df, AA_stringset, scale =
         filter(window_type != "OTHER")
 
     # calculting compound hydropathy score for each protein
-    hydropathy_df <- data.frame(seqid = character(), compound_hydropathy = numeric())
+    if (include_max) {
+        hydropathy_df <- data.frame(seqid = character(), compound_hydropathy = numeric(), max_hydropathy = numeric())
+    } else {
+        hydropathy_df <- data.frame(seqid = character(), compound_hydropathy = numeric())
+    }
     for(i in seq_len(nrow(has_window))) {
         hydrophobicity_df <- hydropathy_local(AA_stringset[has_window$seqid[i]], window = window, scale = scale)
         max_hydrophobicity <- hydrophobicity_df %>%
@@ -236,7 +240,12 @@ add_compound_hydropathy_score <- function(input_window_df, AA_stringset, scale =
 
         window_length <- has_window$window_end[i] - has_window$window_start[i] + 1
         compound_hydropathy_score <- max_hydrophobicity * window_length
-        hydropathy_df <- rbind(hydropathy_df, data.frame(seqid = has_window$seqid[i], compound_hydropathy = compound_hydropathy_score))
+
+        if (include_max) {
+            hydropathy_df <- rbind(hydropathy_df, data.frame(seqid = has_window$seqid[i], compound_hydropathy = compound_hydropathy_score, max_hydropathy = max_hydrophobicity))
+        } else {
+            hydropathy_df <- rbind(hydropathy_df, data.frame(seqid = has_window$seqid[i], compound_hydropathy = compound_hydropathy_score))
+        }
     }
 
     return(protein_window_df %>%

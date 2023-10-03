@@ -328,3 +328,230 @@ marked_df %>%
     theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
     ggtitle("Asp. Nidulans")
 ```
+
+Looking at Rose and KD for screened and verified non SRP and verified SRP proteins.
+
+```{r, echo=FALSE, warning=FALSE}
+screened_non_srp <- read_tsv(here("data", "SC_screened.txt"), col_names = FALSE) %>%
+    pull(X1)
+
+verified_srp <- read_tsv(here("data", "SC_SRP.txt"), col_names = FALSE) %>%
+    pull(X1)
+
+# define paths
+protein_path <- here("data", "Proteins", "SC_first_60.fasta")
+RNA_path <- here("data", "RNA", "SC_999.fasta")
+
+# read in AA strings
+AA_stringset <- readAAStringSet(protein_path)
+
+# grab protein names
+protein_names <- names(AA_stringset)
+
+# run signalP and Phobius on protein sequences
+signalp_output <- signalp(protein_path)
+phobius_output <- r_phobius(protein_path)
+
+# run motif analysis on 5'UTRs
+motif_results <- count_motifs(RNA_path, "CNYTCNYT")
+
+# combine dfs
+combined_df <- signalp_output %>%
+    full_join(phobius_output, by = "seqid") %>%
+    left_join(motif_results, by = "seqid")
+
+scale_name <- "Rose"
+cols <- c("aa", scale_name)
+scale <- scales[, cols]
+colnames(scale) <- c("V1", "V2")
+
+# find compound hydrophobicity score for each protein with a signal peptide
+score_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = scale) %>% 
+    drop_na(compound_hydropathy)
+
+mixed_model <- normalmixEM(score_df$compound_hydropathy, k = 2)
+
+marked_df <- score_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no verified",
+                           seqid %in% screened_non_srp ~ "screened",
+                           seqid %in% verified_srp ~ "yes verified",
+                           TRUE ~ "either"))
+
+# plot distribution
+marked_df %>%
+    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[1], sd = mixed_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = mixed_model$mu[2], sd = mixed_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = mean(mixed_model$mu), color = "blue") +
+    #geom_vline(xintercept = intersection, color = "red") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("S. Cerevisiae")
+```
+
+The split looks very good for both the yes and no populations, now it's time to calculate the errors for both Kyte Doolittle and Rose.
+
+```{r, echo=FALSE, warning=FALSE}
+# getting compound hydropathy scores for both scales
+scale_name <- "Rose"
+cols <- c("aa", scale_name)
+rose <- scales[, cols]
+colnames(rose) <- c("V1", "V2")
+rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = rose) %>% 
+    drop_na(compound_hydropathy)
+kd_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE) %>% 
+    drop_na(compound_hydropathy)
+
+# fitting mixture models
+rose_model <- normalmixEM(rose_df$compound_hydropathy, k = 2)
+kd_model <- normalmixEM(kd_df$compound_hydropathy, k = 2)
+rose_intersection <- uniroot(function(x) {
+    dnorm(x, mean = rose_model$mu[1], sd = rose_model$sigma[1]) - dnorm(x, mean = rose_model$mu[2], sd = rose_model$sigma[2])
+}, c(min(rose_model$mu), max(rose_model$mu)))$root
+kd_intersection <- uniroot(function(x) {
+    dnorm(x, mean = kd_model$mu[1], sd = kd_model$sigma[1]) - dnorm(x, mean = kd_model$mu[2], sd = kd_model$sigma[2])
+}, c(min(kd_model$mu), max(kd_model$mu)))$root
+
+# adding SRP usage tags and predictions
+marked_rose_df <- rose_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "either")) %>%
+    mutate(prediction = case_when(compound_hydropathy < rose_intersection ~ "no",
+                                  TRUE ~ "yes"))
+marked_kd_df <- kd_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "either")) %>%
+    mutate(prediction = case_when(compound_hydropathy < kd_intersection ~ "no",
+                                  TRUE ~ "yes"))
+
+# calculating errors
+rose_error <- marked_rose_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.))
+kd_error <- marked_kd_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.))
+
+# false positive and negative
+rose_fp <- marked_rose_df %>%
+    filter(SRP == "no") %>%
+    summarise(fp = sum(prediction == "yes") / nrow(.))
+rose_fn <- marked_rose_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.))
+kd_fp <- marked_kd_df %>%
+    filter(SRP == "no") %>% 
+    summarise(fp = sum(prediction == "yes") / nrow(.))
+kd_fn <- marked_kd_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.))
+
+# plot kd distribution with SRP labels
+marked_kd_df %>%
+    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = kd_model$mu[1], sd = kd_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = kd_model$mu[2], sd = kd_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = kd_intersection, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("S. Cerevisiae")
+
+# plot kd distribution with SRP labels
+marked_rose_df %>%
+    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = rose_model$mu[1], sd = rose_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = rose_model$mu[2], sd = rose_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = rose_intersection, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("S. Cerevisiae")
+
+print(paste("Rose error:", rose_error))
+print(paste("KD error:", kd_error))
+
+print(paste("Rose false positive:", rose_fp, "Rose false negative:", rose_fn))
+print(paste("KD false positive:", kd_fp, "KD false negative:", kd_fn))
+```
+
+The errors are very similar for both scales, but Rose has a lower false positive and higher false negative rate.
+You can see the small cluster of SRP proteins that are at the bottom of the left mode.
+
+```{r, echo=FALSE, warning=FALSE}
+combined <- rose %>% 
+    left_join(by = "V1", KD)
+colnames(combined) <- c("aa", "Rose", "KD")
+
+# scatter plot of scales with amino acid labels for points
+combined %>% 
+    ggplot(aes(x = Rose, y = KD, label = aa)) +
+    geom_point() +
+    geom_text(nudge_x = 0.01, nudge_y = 0.1) +
+    theme_bw() + 
+    geom_abline(slope = 1, intercept = 0)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+library(randomForest)
+library(mclust)
+
+# getting compound hydropathy scores for both scales
+rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, include_max = TRUE) %>% 
+    drop_na(compound_hydropathy)
+kd_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, include_max = TRUE) %>% 
+    drop_na(compound_hydropathy)
+
+# annotate
+marked_rose_df <- rose_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "either")) %>% 
+    mutate(window_length = window_end - window_start)
+marked_kd_df <- kd_df %>%
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "either")) %>% 
+    mutate(window_length = window_end - window_start)
+                                
+# remove either and train random forest)
+model <- randomForest(factor(SRP) ~ max_hydropathy + window_length, data = marked_rose_df %>% filter(SRP != "either"))
+
+# logistic regression
+model <- glm(factor(SRP) ~ max_hydropathy + window_length, data = marked_rose_df %>% filter(SRP != "either"), family = "binomial")
+# calculate error
+error <- marked_rose_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(prediction = predict(model, type = "response")) %>%
+    mutate(prediction = ifelse(prediction > 0.5, "yes", "no")) %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.))
+
+# 3D plot of logistic regression with heatmap
+marked_rose_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(prediction = predict(model, type = "response")) %>%
+    mutate(prediction = ifelse(prediction > 0.5, "yes", "no")) %>%
+    ggplot(aes(x = max_hydropathy, y = window_length, colour = prediction, shape = SRP)) +
+    geom_point() +
+    theme_bw()
+
+# 2D EM classifier 
+cluster_df <- marked_rose_df %>% 
+    filter(SRP == "yes" | SRP == "no") %>%
+    select(max_hydropathy, window_length)
+
+# fit model
+model <- Mclust(cluster_df, G = 2)
+cluster_assignments <- model$classification
+plot(cluster_df, col = cluster_assignments, main = "EM Clustering Result")
+```
