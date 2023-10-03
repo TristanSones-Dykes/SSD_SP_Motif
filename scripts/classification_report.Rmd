@@ -404,3 +404,21 @@ model_df %>%
     knitr::kable(digits = 3)
 ```
 
+Lets save the two groups of proteins for both levels of accuracy.
+
+```{r, echo=FALSE, warning=FALSE}
+# save the proteins (0.0582)
+rose_df %>% 
+    filter(compound_hydropathy > rose_intersection) %>% 
+    select(seqid) %>%
+    write_tsv(here("results", "proteins", "SRP_rose.txt"), col_names = FALSE)
+
+rose_df %>% 
+    filter(compound_hydropathy < rose_intersection) %>% 
+    select(seqid) %>%
+    write_tsv(here("results", "proteins", "non_SRP_rose.txt"), col_names = FALSE)
+
+# save the proteins (0.037)
+write_fasta(AA_stringset[marked_kd_df$prediction == "yes"], here("results", "proteins", "SRP_window.fasta"))
+write_fasta(AA_stringset[marked_kd_df$prediction == "no"], here("results", "proteins", "non_SRP_window.fasta"))
+```
