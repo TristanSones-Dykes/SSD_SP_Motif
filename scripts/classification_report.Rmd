@@ -51,6 +51,8 @@ This is through some clustering/unsupervised learning methods.
 
 I also look at the accuracy of Phobius' classification of protein regions into TM and SP regions for direct SRP targeting.
 
+The common methodology is going to be: Plot the data, fit a model, plot the predictions, calculate the error.
+
 ## Unsupervised Learning
 
 ### Gaussian Mixture Model
@@ -114,6 +116,19 @@ marked_kd_df <- kd_df %>%
     mutate(prediction = case_when(compound_hydropathy < kd_intersection ~ "no",
                                   TRUE ~ "yes"))
 
+# plot rose distribution with SRP labels
+marked_rose_df %>%
+    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 100) +
+    stat_function(fun = dnorm, args = list(mean = rose_1D_model$mu[1], sd = rose_1D_model$sigma[1]), color = "red") +
+    stat_function(fun = dnorm, args = list(mean = rose_1D_model$mu[2], sd = rose_1D_model$sigma[2]), color = "green") +
+    geom_vline(xintercept = rose_intersection, color = "blue") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    ggtitle("Rose compound hydropathy distribution") + 
+    xlab("Compound Hydropathy")
+    ylab("Density")
+
 # plot kd distribution with SRP labels
 marked_kd_df %>%
     ggplot(aes(x = compound_hydropathy, colour = SRP)) +
@@ -123,18 +138,9 @@ marked_kd_df %>%
     geom_vline(xintercept = kd_intersection, color = "blue") +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-    ggtitle("S. Cerevisiae")
-
-# plot kd distribution with SRP labels
-marked_rose_df %>%
-    ggplot(aes(x = compound_hydropathy, colour = SRP)) +
-    geom_histogram(aes(y = after_stat(density)), bins = 100) +
-    stat_function(fun = dnorm, args = list(mean = rose_1D_model$mu[1], sd = rose_1D_model$sigma[1]), color = "red") +
-    stat_function(fun = dnorm, args = list(mean = rose_1D_model$mu[2], sd = rose_1D_model$sigma[2]), color = "green") +
-    geom_vline(xintercept = rose_intersection, color = "blue") +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-    ggtitle("S. Cerevisiae")
+    ggtitle("Kyte-Doolittle compound hydropathy distribution") + 
+    xlab("Compound Hydropathy")
+    ylab("Density")
 ```
 
 It looks like the Rose scale has split the populations better then Kyte-Doolittle scale. Let's compare the empirical errors of the two scales.
@@ -427,9 +433,9 @@ model_df %>%
     select(name, scale, accuracy, false_positive, false_negative) %>% 
     knitr::kable(digits = 3)
 ```
-
-It looks like the window length model is the simplest and most accurate, which is shown nicely by this plot compared to the 2D models.
-
+<br>
+It looks like the window length model is the simplest and most accurate, which is shown nicely by this plot compared to the 2D models.  
+<br>
 ```{r, echo=FALSE, warning=FALSE}
 library(ggExtra)
 
@@ -487,7 +493,7 @@ marked_rose_df %>%
     filter(SRP != "unlabelled") %>%
     ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP, shape = prediction)) + 
     geom_jitter(width = 0.5) + 
-    ggtitle("Rose scatter plot of all phobius filtered proteins") + 
+    ggtitle("Rose scatter plot of only verified proteins") + 
     ylab("Window Length (Jitter width = 0.5)") + 
     xlab("Max Hydropathy")
 
