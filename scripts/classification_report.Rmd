@@ -2,7 +2,9 @@
 title: "Classification Method Comparison Report"
 author: "Tristan Sones-Dykes"
 date: "02/10/23"
-output: html_document
+output:
+  html_document:
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -45,7 +47,9 @@ combined_df <- signalp_output %>%
 
 ## Summary 
 In this document, I compare some classification methods for SRP vs non SRP proteins using TM and SP region lengths and maximum hydropathy levels.
-This is through some clustering/unsupervised learning methods and some supervised learning methods.
+This is through some clustering/unsupervised learning methods.
+
+I also look at the accuracy of Phobius' classification of protein regions into TM and SP regions for direct SRP targeting.
 
 ## Unsupervised Learning
 
@@ -99,14 +103,14 @@ marked_rose_df <- rose_df %>%
     mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
                            seqid %in% screened_non_srp ~ "no",
                            seqid %in% verified_srp ~ "yes",
-                           TRUE ~ "either")) %>%
+                           TRUE ~ "unlabelled")) %>%
     mutate(prediction = case_when(compound_hydropathy < rose_intersection ~ "no",
                                   TRUE ~ "yes"))
 marked_kd_df <- kd_df %>%
     mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
                            seqid %in% screened_non_srp ~ "no",
                            seqid %in% verified_srp ~ "yes",
-                           TRUE ~ "either")) %>%
+                           TRUE ~ "unlabelled")) %>%
     mutate(prediction = case_when(compound_hydropathy < kd_intersection ~ "no",
                                   TRUE ~ "yes"))
 
@@ -181,6 +185,23 @@ model_df <- model_df %>%
 Rose has more negatives and less false positives, but overall very similar error.
 Let's scatter the scales in 2D and see if we can see any patterns.
 
+```{r, echo=FALSE, warning=FALSE}
+# save the proteins (0.0582)
+#rose_df %>% 
+#    filter(compound_hydropathy > rose_intersection) %>% 
+#    select(seqid) %>%
+#    write_tsv(here("results", "proteins", "SRP_rose.txt"), col_names = FALSE)#
+#
+#rose_df %>% 
+#    filter(compound_hydropathy < rose_intersection) %>% 
+#    select(seqid) %>%
+#    write_tsv(here("results", "proteins", "non_SRP_rose.txt"), col_names = FALSE)#
+
+# save the proteins (0.037)
+#write_fasta(AA_stringset[marked_kd_df$prediction == "yes"], here("results", "proteins", "SRP_window.fasta"))
+#write_fasta(AA_stringset[marked_kd_df$prediction == "no"], here("results", "proteins", "non_SRP_window.fasta"))
+```
+
 ---
 
 #### 2D Gaussian Mixture Model
@@ -188,26 +209,25 @@ Let's scatter the scales in 2D and see if we can see any patterns.
 ```{r, echo=FALSE, warning=FALSE}
 marked_rose_df %>% 
     filter(SRP == "yes" | SRP == "no") %>%
-    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP)) + 
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
     geom_jitter(height = 0.5) + 
-    ggtitle("Rose scatter plot of only verified proteins (with jitter on Y)") + 
-    xlab("Max hydropathy (Rose)")
+    ggtitle("Rose scatter plot of only verified proteins (with jitter on X)") + 
+    ylab("Max hydropathy (Rose)")
 
 marked_kd_df %>%
     filter(SRP == "yes" | SRP == "no") %>%
-    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP)) + 
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
     geom_jitter(height = 0.5) + 
-    ggtitle("KD scatter plot of only verified proteins (with jitter on Y)") + 
-    xlab("Max hydropathy (Kyte-Doolittle)")
-
-ggplot(marked_rose_df, aes(x = window_length, colour = SRP)) + 
-    geom_histogram(binwidth = 1)
+    ggtitle("KD scatter plot of only verified proteins (with jitter on X)") + 
+    ylab("Max hydropathy (Kyte-Doolittle)")
 ```
 
 In the 2D scatter plots, we can see that there are two clear clusters of SRP and non-SRP proteins for both scales.
 This seems to primarily come from the window length, as is shown in the histogram.
 
 Lets fit a 2D mixture model to the data and calculate errors.
+
+---
 
 ```{r, echo=FALSE, warning=FALSE}
 cluster_rose_df <- marked_rose_df %>% 
@@ -235,15 +255,18 @@ cluster_kd_df <- cluster_kd_df %>%
                                   prediction == "2" ~ "yes")) %>% 
     mutate(scale = "KD")
 
-plot(rose_2D_model, what = "classification")
-plot(kd_2D_model, what = "classification")
+#plot(rose_2D_model, what = "classification")
+#plot(kd_2D_model, what = "classification")
 
 # plot distributions with model function
 cluster_rose_df %>%
     rbind(cluster_kd_df) %>%
-    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP, shape = prediction)) +
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP, shape = prediction)) +
     geom_point() + 
-    facet_wrap(~scale, ncol = 2, nrow = 1, scales = "free")
+    facet_wrap(~scale, ncol = 2, nrow = 1, scales = "free") + 
+    xlab("Window Length") +
+    ylab("Max Hydropathy") +
+    ggtitle("Rose and KD scatter plot of only verified proteins")
 
 # calculating errors
 rose_error <- cluster_rose_df %>%
@@ -347,7 +370,7 @@ This accuracy is the same as the compound hydropathy and 2D models for Rose.
 
 ---
 
-#### K-means
+### K-means
 
 I'll only do K-means on Rose as both scales seem to cluster the data identically
 
@@ -364,9 +387,9 @@ cluster_df <- cluster_rose_df %>%
 
 # plot predictions
 cluster_df %>%
-    ggplot(aes(x = max_hydropathy, y = window_length, colour = SRP, shape = prediction)) +
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP, shape = prediction)) +
     geom_point() + 
-    geom_hline(yintercept = 14, color = "blue")
+    geom_vline(xintercept = 14, color = "blue")
 
 # calculate errors
 kmeans_error <- cluster_df %>%
@@ -391,10 +414,11 @@ print(paste("kmeans false positive:", round(kmeans_fp, 4), "kmeans false negativ
 model_df <- model_df %>% 
     add_row(name = "K-means", scale = "Rose", accuracy = kmeans_error, false_positive = kmeans_fp, false_negative = kmeans_fn, model_type = "Unsupervised")
 ```
+This shows that the K-means model is just as accurate as the GMM models, so there is no normal distribution assumption needed.
 
 ---
 
-#### Unsupervised Summary 
+### Unsupervised Summary 
 Here is a table of the unsupervised models and their performances:
     
 ```{r, echo=FALSE, warning=FALSE}
@@ -404,21 +428,110 @@ model_df %>%
     knitr::kable(digits = 3)
 ```
 
-Lets save the two groups of proteins for both levels of accuracy.
+It looks like the window length model is the simplest and most accurate, which is shown nicely by this plot compared to the 2D models.
 
 ```{r, echo=FALSE, warning=FALSE}
-# save the proteins (0.0582)
-rose_df %>% 
-    filter(compound_hydropathy > rose_intersection) %>% 
-    select(seqid) %>%
-    write_tsv(here("results", "proteins", "SRP_rose.txt"), col_names = FALSE)
+library(ggExtra)
 
-rose_df %>% 
-    filter(compound_hydropathy < rose_intersection) %>% 
-    select(seqid) %>%
-    write_tsv(here("results", "proteins", "non_SRP_rose.txt"), col_names = FALSE)
+scatter_plot <- marked_rose_df %>% 
+    filter(SRP == "yes" | SRP == "no") %>%
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
+    geom_jitter(width = 0.5) + 
+    xlab("Window Length") + 
+    ylab("Max Hydropathy (Rose)") + 
+    ggtitle("Rose scatter plot of only verified proteins")
 
-# save the proteins (0.037)
-write_fasta(AA_stringset[marked_kd_df$prediction == "yes"], here("results", "proteins", "SRP_window.fasta"))
-write_fasta(AA_stringset[marked_kd_df$prediction == "no"], here("results", "proteins", "non_SRP_window.fasta"))
+ggMarginal(scatter_plot, type = "histogram", groupColour = TRUE, groupFill = TRUE)
+```
+
+---
+
+## Phobius classification
+
+Phobius classifies proteins into TM and SP regions, and then labels different parts of the protein with regions depending on the classification.
+It looks like the TM and SP regions have a clear split in the hydropathy scores, so I'll use this to classify the proteins.
+
+```{r, echo=FALSE, warning=FALSE}
+# fetch predictions from phobius
+phobius_labels <- phobius_output %>% 
+    select(seqid, phobius_type) %>% 
+    filter(phobius_type != "OTHER") %>%
+    mutate(phobius_type = case_when(phobius_type == "SP" ~ "no",
+                                    phobius_type == "TM" ~ "yes")) %>%
+    mutate(phobius_type = as.factor(phobius_type))
+colnames(phobius_labels) <- c("seqid", "prediction")
+
+# add predictions to df
+marked_rose_df <- rose_df %>% 
+    left_join(phobius_labels, by = "seqid") %>% 
+    mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
+                           seqid %in% screened_non_srp ~ "no",
+                           seqid %in% verified_srp ~ "yes",
+                           TRUE ~ "unlabelled"))
+
+# plot scatter plot with predictions
+marked_rose_df %>%
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
+    geom_jitter(width = 0.5) + 
+    ggtitle("Rose scatter plot of all phobius filtered proteins") + 
+    ylab("Window Length (Jitter width = 0.5)") + 
+    xlab("Max Hydropathy")
+```
+
+---
+
+It looks like the TM and SP regions have a clear split in the hydropathy scores, so I'll use this to classify the proteins.
+
+```{r, echo=FALSE, warning=FALSE}
+marked_rose_df %>% 
+    filter(SRP != "unlabelled") %>%
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP, shape = prediction)) + 
+    geom_jitter(width = 0.5) + 
+    ggtitle("Rose scatter plot of all phobius filtered proteins") + 
+    ylab("Window Length (Jitter width = 0.5)") + 
+    xlab("Max Hydropathy")
+
+# calculating errors
+phobius_error <- marked_rose_df %>%
+    filter(SRP == "yes" | SRP == "no") %>%
+    mutate(error = ifelse(SRP == prediction, 0, 1)) %>%
+    summarise(error = sum(error) / nrow(.)) %>% 
+    pull(error)
+
+# false positive and negative
+phobius_fp <- marked_rose_df %>%
+    filter(SRP == "no") %>%
+    summarise(fp = sum(prediction == "yes") / nrow(.)) %>% 
+    pull(fp)
+phobius_fn <- marked_rose_df %>%
+    filter(SRP == "yes") %>% 
+    summarise(fn = sum(prediction == "no") / nrow(.)) %>% 
+    pull(fn)
+
+print(paste("phobius error:", round(phobius_error, 4)))
+print(paste("phobius false positive:", round(phobius_fp, 4), "phobius false negative:", round(phobius_fn, 4)))
+
+# add them all to model_df
+model_df <- model_df %>% 
+    add_row(name = "Phobius", scale = "Rose", accuracy = phobius_error, false_positive = phobius_fp, false_negative = phobius_fn, model_type = "NA")
+```
+
+So the Phobius Error is 0.01 higher than the unclassified window length model, all of this is caused by a higher number of false negatives.
+
+---
+
+## Conclusion
+
+The "most accurate" model is the mixed Kyte-Doolittle model; however, the difference is very small and the GMM is far more mixed
+so would not hold it's accuracy in a simulation study, and seems prevelant to outliers/overfitting.
+
+The simplest model is just the phobius classification, it's error is just above the window length model, primarily caused by a higher number of false negatives.
+
+The window length model is a combination of simple and accurate.
+
+```{r, echo=FALSE, warning=FALSE}
+model_df %>% 
+    filter(name == "Compound GMM" | name == "Window Length GMM" | name == "Phobius") %>% 
+    select(name, scale, accuracy, false_positive, false_negative) %>% 
+    knitr::kable(digits = 3)
 ```
