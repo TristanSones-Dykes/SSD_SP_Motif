@@ -107,14 +107,16 @@ marked_rose_df <- rose_df %>%
                            seqid %in% verified_srp ~ "yes",
                            TRUE ~ "unlabelled")) %>%
     mutate(prediction = case_when(compound_hydropathy < rose_intersection ~ "no",
-                                  TRUE ~ "yes"))
+                                  TRUE ~ "yes")) %>% 
+    mutate(scale = "Rose")
 marked_kd_df <- kd_df %>%
     mutate(SRP = case_when(seqid %in% verified_non_srp ~ "no",
                            seqid %in% screened_non_srp ~ "no",
                            seqid %in% verified_srp ~ "yes",
                            TRUE ~ "unlabelled")) %>%
     mutate(prediction = case_when(compound_hydropathy < kd_intersection ~ "no",
-                                  TRUE ~ "yes"))
+                                  TRUE ~ "yes")) %>%
+    mutate(scale = "KD")
 
 # plot rose distribution with SRP labels
 marked_rose_df %>%
@@ -214,18 +216,14 @@ Let's scatter the scales in 2D and see if we can see any patterns.
 
 ```{r, echo=FALSE, warning=FALSE}
 marked_rose_df %>% 
+    rbind(marked_kd_df) %>%
     filter(SRP == "yes" | SRP == "no") %>%
     ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
     geom_jitter(height = 0.5) + 
-    ggtitle("Rose scatter plot of only verified proteins (with jitter on X)") + 
-    ylab("Max hydropathy (Rose)")
-
-marked_kd_df %>%
-    filter(SRP == "yes" | SRP == "no") %>%
-    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
-    geom_jitter(height = 0.5) + 
-    ggtitle("KD scatter plot of only verified proteins (with jitter on X)") + 
-    ylab("Max hydropathy (Kyte-Doolittle)")
+    facet_wrap(~scale, ncol = 2, nrow = 1, scales = "free") + 
+    ggtitle("Rose and KD scatter plot of only verified proteins") + 
+    ylab("Max hydropathy (Rose)") + 
+    xlab("Window Length")
 ```
 
 In the 2D scatter plots, we can see that there are two clear clusters of SRP and non-SRP proteins for both scales.
@@ -477,11 +475,11 @@ marked_rose_df <- rose_df %>%
 
 # plot scatter plot with predictions
 marked_rose_df %>%
-    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP)) + 
+    ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP, shape = prediction)) + 
     geom_jitter(width = 0.5) + 
     ggtitle("Rose scatter plot of all phobius filtered proteins") + 
-    ylab("Window Length (Jitter width = 0.5)") + 
-    xlab("Max Hydropathy")
+    ylab("Max Hydropathy") + 
+    xlab("Window Length (Jitter width = 0.5)")
 ```
 
 ---
@@ -494,8 +492,8 @@ marked_rose_df %>%
     ggplot(aes(x = window_length, y = max_hydropathy, colour = SRP, shape = prediction)) + 
     geom_jitter(width = 0.5) + 
     ggtitle("Rose scatter plot of only verified proteins") + 
-    ylab("Window Length (Jitter width = 0.5)") + 
-    xlab("Max Hydropathy")
+    ylab("Max Hydropathy") + 
+    xlab("Window Length (Jitter width = 0.5)")
 
 # calculating errors
 phobius_error <- marked_rose_df %>%
