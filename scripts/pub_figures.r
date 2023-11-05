@@ -3,7 +3,8 @@ library(tidyverse)
 library(cowplot)
 library(ggExtra)
 library(ggplotify)
-library(imager)
+library(vcd)
+theme_set(theme_cowplot())
 
 ###
 # The purpose of this script is to generate all figures for the writeup
@@ -30,6 +31,20 @@ labelled_df <- rose_df %>%
 verified_df <- labelled_df %>% 
     filter(`Experimental label` != "unlabelled")
 
+# plot x axis (0, 35)
+lower <- 5 
+upper <- 35
+x_delim <- seq(lower, upper, 10)
+x_minor <- seq(lower, upper, 5)
+lims <- c(lower, upper)
+
+# Figure 1A - Image of cleaved vs non cleaved SP
+
+# placeholder
+# https://www.mdpi.com/1422-0067/22/21/11871
+Fig_1A <- ggplot(data.frame(x = rnorm(100)), aes(x = x)) + 
+    geom_histogram() + 
+    ggtitle("Placeholder")
 
 # Figure 1B - Plot of contingency table of SP/TM regions found by phobius
 # and those verified experimentally
@@ -46,16 +61,7 @@ rownames(contingency_table) <- c("Cleaved SP", "Non-cleaved SP")
 
 # For a two-way table, mosaic() fits a model of independence, [A][B] or ~A+B as an R formula
 # https://www.datavis.ca/courses/VCD/vcd-tutorial.pdf
-library(vcd)
-png(here("results", "figures", "Fig_1B.png"), width = 10, height = 10, units = "in", res = 300)
-vcd::mosaic(contingency_table, shade = TRUE, legend = TRUE, main = "Verified SP/TM regions vs Phobius predictions")
-dev.off()
-
-# get plot from file as image
-fig_image <- load.image(here("results", "figures", "Fig_1B.png"))
-Fig_1B <- ggdraw() + draw_image(fig_image)
-
-# save as image (function outputs odd type)
+Fig_1B <- as.grob(~vcd::mosaic(contingency_table, shade = TRUE, legend = TRUE, main = "Verified SP/TM regions vs Phobius predictions"))
 
 
 # FIGURE 1C - Scatter plot of only experimentally verified proteins
@@ -65,7 +71,8 @@ base <- ggplot(verified_df, aes(x = window_length, y = max_hydropathy, colour = 
     geom_point() + 
     xlab("Window length (aa)") + 
     ylab("Max hydropathy (Rose)") + 
-    ggtitle("Window length and Max hydropathy of experimentally verified proteins")
+    ggtitle("Lab verified SP/TM proteins") + 
+    scale_x_continuous(breaks = x_delim, limits = lims, minor_breaks = x_minor)
 
 Fig_1C <- ggMarginal(base, type = "histogram", groupColour = TRUE, groupFill = TRUE)
 
@@ -77,10 +84,14 @@ base <- ggplot(labelled_df, aes(x = window_length, y = max_hydropathy, colour = 
     geom_point() + 
     xlab("Window length (aa)") + 
     ylab("Max hydropathy (Rose)") + 
-    ggtitle("Window length and Max hydropathy of experimentally verified proteins")
+    ggtitle("Phobius detected SP/TM regions") + 
+    scale_x_continuous(breaks = x_delim, limits = lims, minor_breaks = x_minor)
 
 Fig_1D <- ggMarginal(base, type = "histogram", groupColour = TRUE, groupFill = TRUE)
 
 
 # combine figures into 2x2 grid
-Fig_1 <- plot_grid(Fig_1B, Fig_1C, Fig_1D, labels = c("B", "C", "D"), ncol = 2, nrow = 2)
+Fig_1 <- plot_grid(Fig_1A, Fig_1B, Fig_1C, Fig_1D, labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+# save figure
+ggsave(here("results", "figures", "Fig_1.jpg"), Fig_1, width = 15, height = 10, dpi = 300)
