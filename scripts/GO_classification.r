@@ -5,6 +5,15 @@ source(here("src", "hydrophobicity.r"))
 source(here("src", "motif_analysis.r"))
 library(mixtools)
 
+###
+# The purpose of this script is to extract all protein IDs from all species in the proteins file
+# that are divided into two groups, cleaved and non cleaved signal peptides.
+# This is using phobius labels.
+#
+# This is also where the figure data is generated for the writeup (stored in results).
+###
+
+
 # attach path to protein file names
 protein_paths <- base::Map(paste, here("data", "proteins"), list.files(here("data", "proteins")), sep = "/")
 species_names <- gsub(".fasta", "", list.files(here("data", "proteins")))
