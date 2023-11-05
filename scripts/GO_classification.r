@@ -107,17 +107,28 @@ contingency_table <- labelled_df %>%
 # chisq test
 chisq.test(contingency_table[,2:3])
 
-
-ggplot(labelled_df, aes(x = window_length)) + 
-    geom_histogram(aes(y = after_stat(density)), bins = 100) + 
-    stat_function(fun = dnorm, args = list(mean = model$mu[1], sd = model$sigma[1]), colour = "blue") + 
-    stat_function(fun = dnorm, args = list(mean = model$mu[2], sd = model$sigma[2]), colour = "green") + 
-    labs(x = "Window Length (AA)", y = "Count") + 
-    geom_vline(xintercept = intersection, colour = "red") + 
-    facet_wrap(~verified, scales = "free")
-
 phobius_proteins_SC <- SC_first_60 %>%
     pull(seqid)
 
 SC_AA <- proteins[[6]]
 writeXStringSet(SC_AA[phobius_proteins_SC], file = here("results", "proteins", "SC_phobius.fasta"))
+
+# export data to results for figures
+scale_name <- "Rose"
+cols <- c("aa", scale_name)
+rose <- scales[, cols]
+colnames(rose) <- c("V1", "V2")
+
+protein_path <- here("data", "Proteins", "SC_first_60.fasta")
+AA_stringset <- readAAStringSet(protein_path)
+
+phobius_output <- r_phobius(protein_path)
+signalp_output <- signalp(protein_path)
+combined_df <- signalp_output %>%
+    full_join(phobius_output, by = "seqid")
+
+rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = rose, include_max = TRUE) %>% 
+    drop_na(compound_hydropathy) %>% 
+    mutate(window_length = window_end - window_start)
+
+write_csv(rose_df, here("results", "figures", "SC_first_60.csv"))
