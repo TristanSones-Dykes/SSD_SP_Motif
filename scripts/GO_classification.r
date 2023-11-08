@@ -127,7 +127,7 @@ signalp_output <- signalp(protein_path)
 combined_df <- signalp_output %>%
     full_join(phobius_output, by = "seqid")
 
-rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = rose, include_max = TRUE) %>% 
+rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP = FALSE, scale = KD, include_max = TRUE) %>% 
     drop_na(compound_hydropathy) %>% 
     mutate(window_length = window_end - window_start)
 
