@@ -15,8 +15,8 @@ library(mixtools)
 
 
 # attach path to protein file names
-protein_paths <- base::Map(paste, here("data", "proteins"), list.files(here("data", "proteins")), sep = "/")
-species_names <- gsub(".fasta", "", list.files(here("data", "proteins")))
+protein_paths <- base::Map(paste, here("data", "proteins", "pub"), list.files(here("data", "proteins", "pub")), sep = "/")
+species_names <- gsub(".fasta", "", list.files(here("data", "proteins", "pub")))
 
 # read in protein sequences
 proteins <- lapply(protein_paths, readAAStringSet)
@@ -35,10 +35,18 @@ for (i in 1:length(phobius_results)) {
 phobius_df <- do.call(rbind, phobius_results)
 rownames(phobius_df) <- NULL
 
-ggplot(phobius_df, aes(x = window_length, colour = phobius_type)) + 
+plot <- ggplot(phobius_df, aes(x = window_length, colour = phobius_type)) + 
     geom_histogram(bins = 100) + 
-    facet_wrap(~species, scales = "free") + 
+    facet_wrap(~species, scales = "free_y") + 
+    labs(x = "Window Length (AA)", y = "Count") + 
+    scale_x_continuous(breaks = seq(0, 35, 10))
+
+# bar plot of above categories
+ggplot(phobius_df, aes(x = phobius_type, fill = phobius_type)) + 
+    geom_bar(stat="count") + 
+    facet_wrap(~species, scales = "free_y") + 
     labs(x = "Window Length (AA)", y = "Count")
+
 
 # write each phobius_type group of each species to a text file
 for (i in 1:length(phobius_results)) {

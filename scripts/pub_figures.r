@@ -57,7 +57,7 @@ contingency_table <- verified_df %>%
 contingency_table <- as.table(as.matrix(contingency_table[,2:3]))
 
 names(dimnames(contingency_table)) <- c("Experimental label", "Phobius label")
-rownames(contingency_table) <- c("Cleaved SP", "Non-cleaved SP")
+rownames(contingency_table) <- c("Non-cleaved SP", "Cleaved SP")
 
 # For a two-way table, mosaic() fits a model of independence, [A][B] or ~A+B as an R formula
 # https://www.datavis.ca/courses/VCD/vcd-tutorial.pdf
