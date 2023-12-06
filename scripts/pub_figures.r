@@ -98,9 +98,21 @@ ggsave(here("results", "figures", "Fig_1.jpg"), Fig_1, width = 15, height = 10, 
 
 
 # Figure 2 - histograms of window lengths for each species
-library(here)
-# grab functions from src
-source(here("src", "hydrophobicity.r"))
+
+read_phobius <- function(protein_AA_path) {
+    # extract file name from path, replace .fasta with _out
+    file_name <- gsub(".fasta", "", basename(protein_AA_path))
+
+    # create output path
+    out_path <- paste0(here("results", "phobius", file_name), ".csv")
+
+    # check if output path exists, if it does, exit function
+    if (file.exists(out_path)) {
+        return(read_csv(out_path))
+    } else {
+        cat("No output file found")
+    }
+}
 
 # attach path to protein file names
 protein_paths <- base::Map(paste, here("data", "proteins", "pub"), list.files(here("data", "proteins", "pub")), sep = "/")
@@ -110,7 +122,7 @@ species_names <- gsub(".fasta", "", list.files(here("data", "proteins", "pub")))
 proteins <- lapply(protein_paths, readAAStringSet)
 
 # run phobius
-phobius_results <- lapply(protein_paths, r_phobius)
+phobius_results <- lapply(protein_paths, read_phobius)
 
 for (i in 1:length(phobius_results)) {
     phobius_results[[i]] <- phobius_results[[i]] %>% 
