@@ -35,11 +35,28 @@ for (i in 1:length(phobius_results)) {
 phobius_df <- do.call(rbind, phobius_results)
 rownames(phobius_df) <- NULL
 
+species_order <- list("S_Cerevisiae" = 1,
+              "C_Albicans" = 2,
+              "N_Crassa" = 3,
+              "P_Oryzae" = 4,
+              "Z_Tritici" = 5,
+              "A_Fumigatus" = 6,
+              "S_Pombe" = 7,
+              "P_Graminis" = 8,
+              "U_Maydis" = 9,
+              "C_Neoformans" = 10,
+              "R_Delemar" = 11,
+              "B_Dendrobatitis" = 12)
+phobius_df$species <- factor(phobius_df$species, levels = names(species_order))
+
 plot <- ggplot(phobius_df, aes(x = window_length, colour = phobius_type)) + 
-    geom_histogram(bins = 100) + 
-    facet_wrap(~species, scales = "free_y") + 
-    labs(x = "Window Length (AA)", y = "Count") + 
+    geom_histogram(aes(y = after_stat(density)), bins = 100) + 
+    facet_wrap(~species, scales = "free_y", ncol = 1) + 
+    labs(x = "Window Length (AA)", y = "Density") + 
     scale_x_continuous(breaks = seq(0, 35, 10))
+
+# save 
+ggsave(here("results", "figures", "phobius_window_length.jpg"), plot, width = 15, height = 50, units = "cm")
 
 # bar plot of above categories
 ggplot(phobius_df, aes(x = phobius_type, fill = phobius_type)) + 

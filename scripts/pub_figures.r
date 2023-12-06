@@ -95,3 +95,53 @@ Fig_1 <- plot_grid(Fig_1A, Fig_1B, Fig_1C, Fig_1D, labels = c("A", "B", "C", "D"
 
 # save figure
 ggsave(here("results", "figures", "Fig_1.jpg"), Fig_1, width = 15, height = 10, dpi = 300)
+
+
+# Figure 2 - histograms of window lengths for each species
+library(here)
+# grab functions from src
+source(here("src", "hydrophobicity.r"))
+
+# attach path to protein file names
+protein_paths <- base::Map(paste, here("data", "proteins", "pub"), list.files(here("data", "proteins", "pub")), sep = "/")
+species_names <- gsub(".fasta", "", list.files(here("data", "proteins", "pub")))
+
+# read in protein sequences
+proteins <- lapply(protein_paths, readAAStringSet)
+
+# run phobius
+phobius_results <- lapply(protein_paths, r_phobius)
+
+for (i in 1:length(phobius_results)) {
+    phobius_results[[i]] <- phobius_results[[i]] %>% 
+        filter(phobius_end != 0) %>%
+        mutate(window_length = phobius_end - phobius_start) %>% 
+        mutate(species = species_names[i])
+}
+
+# join and reset row names
+phobius_df <- do.call(rbind, phobius_results)
+rownames(phobius_df) <- NULL
+
+species_order <- list("S_Cerevisiae" = 1,
+              "C_Albicans" = 2,
+              "N_Crassa" = 3,
+              "P_Oryzae" = 4,
+              "Z_Tritici" = 5,
+              "A_Fumigatus" = 6,
+              "S_Pombe" = 7,
+              "P_Graminis" = 8,
+              "U_Maydis" = 9,
+              "C_Neoformans" = 10,
+              "R_Delemar" = 11,
+              "B_Dendrobatitis" = 12)
+phobius_df$species <- factor(phobius_df$species, levels = names(species_order))
+
+plot <- ggplot(phobius_df, aes(x = window_length, colour = phobius_type)) + 
+    geom_histogram(aes(y = after_stat(density)), bins = 100) + 
+    facet_wrap(~species, scales = "free_y", ncol = 1) + 
+    labs(x = "Window Length (AA)", y = "Density") + 
+    scale_x_continuous(breaks = seq(0, 35, 10))
+
+# save 
+ggsave(here("results", "figures", "phobius_window_length.jpg"), plot, width = 15, height = 50, units = "cm")
