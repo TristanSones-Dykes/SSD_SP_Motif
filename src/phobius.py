@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup as bs
 import mechanicalsoup
+from numpy import full
 import pandas as pd
 import os
 import signalp as sp
@@ -15,7 +16,7 @@ url = "https://phobius.sbc.su.se/index.html"
 
 # function to run phobius on a FASTA formatted list of proteins
 # reads from file by default
-def phobius(origin: str, isString: bool = False) -> pd.DataFrame:
+def phobius(origin: str, isString: bool = False, fullSignal: bool = False) -> pd.DataFrame:
     if isString:
         fileString = origin
     else:
@@ -73,8 +74,12 @@ def phobius(origin: str, isString: bool = False) -> pd.DataFrame:
             window_row = col_2.index("TRANSMEM")
         elif window_type == "SIGNAL":
             # search region rows for "H-REGION."
-            region_rows = [i for i, x in enumerate(col_2) if x == "REGION"]
-            window_row = region_rows[1]
+            if not fullSignal:
+                region_rows = [i for i, x in enumerate(col_2) if x == "REGION"]
+                window_row = region_rows[1]
+            else:
+                # if fullSignal is true, grab signal row
+                window_row = col_2.index("SIGNAL")
         
         start = int(protein[window_row][2])
         end = int(protein[window_row][3])

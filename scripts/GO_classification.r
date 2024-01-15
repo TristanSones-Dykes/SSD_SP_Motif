@@ -157,3 +157,114 @@ rose_df <- add_compound_hydropathy_score(combined_df, AA_stringset, useSignalP =
     mutate(window_length = window_end - window_start)
 
 write_csv(rose_df, here("results", "figures", "SC_first_60.csv"))
+
+
+# -------------
+# Comparing deepTMHMM to phobius
+# -------------
+
+# Comparing counts
+CA_df <- phobius_df %>% 
+    filter(species == "C_Albicans")
+
+phobius_counts <- CA_df %>% 
+    group_by(phobius_type) %>% 
+    summarise(count = n()) %>% 
+    mutate(tool = "phobius")
+colnames(phobius_counts) <- c("type", "count", "tool")
+
+# read in deepTMHMM 3line 
+CA_3line <- read_delim(here("results", "deepTMHMM", "C_Albicans", "predicted_topologies.3line"), delim = "\n", col_names = FALSE)
+
+classifications <- CA_3line[seq(1, dim(CA_3line)[1], 3),] %>% 
+    mutate(div = str_locate(X1, " | ")[1]) %>% 
+    mutate(X1 = str_sub(X1, div + 2, str_length(X1))) %>% 
+    group_by(X1) %>% 
+    summarise(count = n()) %>% 
+    mutate(tool = "deepTMHMM") %>% 
+    mutate(X1 = str_trim(X1))
+colnames(classifications) <- c("type", "count", "tool")
+
+# combine
+combined <- rbind(phobius_counts, classifications)
+
+no_glob <- combined %>% 
+    filter(type != "GLOB")
+
+# plot
+ggplot(no_glob, aes(x = type, y = count, fill = tool)) + 
+    geom_bar(stat = "identity", position = position_dodge()) +
+    labs(x = "Classification", y = "Count", title = "Comparison of phobius and deepTMHMM") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# contingency table
+contingency <- combined %>% 
+    filter(type != "GLOB") %>% 
+    spread(tool, count) %>% 
+    column_to_rownames("type")
+
+no_glob %>% 
+    group_by(tool) %>%
+    summarise(total = sum(count))
+
+
+# comparing total lengths
+full_phobius <- r_phobius(here("data", "Proteins", "pub", "C_Albicans.fasta"), fullSignal = TRUE) %>% 
+    mutate(length = phobius_end - phobius_start) %>% 
+    filter(phobius_end != 0) %>% 
+    mutate(SP = "Full length Phobius")
+
+h_region_phobius <- r_phobius(here("data", "Proteins", "pub", "C_Albicans.fasta"), fullSignal = FALSE) %>% 
+    mutate(length = phobius_end - phobius_start) %>% 
+    filter(phobius_end != 0) %>% 
+    mutate(SP = "H-region Phobius")
+
+ggplot(full_phobius, aes(x = length, fill = phobius_type)) + 
+    geom_histogram(aes(y = after_stat(density)), bins = 100) + 
+    labs(x = "Window Length (AA)", y = "Density") + 
+    scale_x_continuous(breaks = seq(0, 35, 10))
+
+combined_phobius <- rbind(full_phobius, h_region_phobius)
+
+ggplot(combined_phobius, aes(x = length, fill = phobius_type)) + 
+    geom_histogram(aes(y = after_stat(density)), bins = 100) + 
+    labs(x = "Window Length (AA)", y = "Density") + 
+    scale_x_continuous(breaks = seq(0, 35, 10)) + 
+    facet_wrap(~SP, scales = "free_y", ncol = 1)
+
+# deepTMHMM
+library(reticulate)
+source_python(here("src", "deepTMHMM.py"))
+
+deepTMHMM_df <- extract_deepTMHMM(here("results", "deepTMHMM", "C_Albicans", "TMRs.gff3"), 1)
+
+deepTMHMM_df %>%
+    group_by(seqID) %>% 
+    summarise(count = n())
+
+deep_SP_window <- deepTMHMM_df %>% 
+    filter(window_type == "SP") %>% 
+    mutate(window_length = end - start) %>% 
+    select(window_length) %>% 
+    mutate(tool = "deepTMHMM")
+
+phobius_SP_window <- full_phobius %>% 
+    filter(phobius_type == "SP") %>%
+    mutate(window_length = phobius_end - phobius_start) %>% 
+    select(window_length) %>% 
+    mutate(tool = "phobius")
+
+deep_phobius <- rbind(deep_SP_window, phobius_SP_window)
+
+ggplot(deep_phobius, aes(x = window_length, fill = tool)) + 
+    geom_histogram(aes(y = after_stat(density)), bins = 100) + 
+    labs(x = "Window Length (AA)", y = "Density") + 
+    scale_x_continuous(breaks = seq(0, 35, 10))
+
+# chi-squared GOF test
+counts <- deep_phobius %>% 
+    group_by(tool, window_length) %>%
+    summarise(count = n()) %>% 
+    spread(tool, count, fill = 0)
+
+chisq.test(counts[,2:3])

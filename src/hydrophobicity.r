@@ -148,9 +148,14 @@ compound_hydropathy_score <- function(protein_AAStringSet, window_size = 9) {
 # function that takes in a protein fasta path and returns a dataframe
 # with the phobius results for each protein, if a SP or TM region
 # is detected, window bounds are returned
-r_phobius <- function(protein_AA_path) {
-    # extract file name from path, replace .fasta with _out
-    file_name <- gsub(".fasta", "", basename(protein_AA_path))
+# if fullSignal is TRUE, the full SP length is returned
+r_phobius <- function(protein_AA_path, fullSignal = FALSE) {
+    # extract file name from path
+    if (fullSignal) {
+        file_name <- gsub(".fasta", "_fullSignal", basename(protein_AA_path))
+    } else {
+        file_name <- gsub(".fasta", "", basename(protein_AA_path))
+    }
 
     # create output path
     out_path <- paste0(here("results", "phobius", file_name), ".csv")
@@ -161,7 +166,7 @@ r_phobius <- function(protein_AA_path) {
     }
 
     # call phobius on file
-    hydropathy_windows <- phobius(protein_AA_path) %>%
+    hydropathy_windows <- phobius(protein_AA_path, fullSignal = fullSignal) %>%
         mutate(type = case_when(
             type == "TRANSMEM" ~ "TM",
             type == "SIGNAL" ~ "SP",
